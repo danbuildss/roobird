@@ -682,28 +682,30 @@ export function AssetView({ symbol }: { symbol: string }) {
           )}
         </div>
 
-        {/* Trade CTA */}
-        <div>
-          <p style={{ fontSize:11, fontWeight:600, color:'var(--text-3)', letterSpacing:'0.06em', textTransform:'uppercase', marginBottom:12 }}>Trade</p>
-          <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-card)', padding:'14px' }}>
-            <p style={{ fontSize:12, color:'var(--text-2)', marginBottom:12, lineHeight:1.5 }}>
-              Roobird connects you to execution partners. We don&apos;t execute trades.
-            </p>
-            <Link href={`/market/${symbol}/trade`} style={{
-              display:'flex', alignItems:'center', justifyContent:'space-between',
-              padding:'10px 14px', background:'var(--surface-raised)',
-              border:'1px solid var(--border)', borderRadius:8,
-              textDecoration:'none', fontSize:13, fontWeight:600,
-              color:'var(--text-1)', transition:'border-color 120ms',
-            }}
-              onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-3)')}
-              onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
-            >
-              <span>Trade {symbol}</span>
-              <ArrowUpRight size={14} strokeWidth={2} style={{ color:'var(--accent)' }} />
-            </Link>
+        {/* Bankr execution CTA — stocks only */}
+        {(['NVDA', 'AAPL', 'TSLA'] as const).includes(symbol as 'NVDA' | 'AAPL' | 'TSLA') && (
+          <div>
+            <p style={{ fontSize:11, fontWeight:600, color:'var(--text-3)', letterSpacing:'0.06em', textTransform:'uppercase', marginBottom:12 }}>Trade</p>
+            <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-card)', padding:'14px' }}>
+              <Link href="https://bankr.bot" target="_blank" rel="noopener noreferrer" style={{
+                display:'flex', alignItems:'center', justifyContent:'space-between',
+                padding:'10px 14px', background:'var(--accent)',
+                borderRadius:8, textDecoration:'none',
+                fontSize:13, fontWeight:700, color:'#000',
+                transition:'opacity 120ms',
+              }}
+                onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
+                onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+              >
+                <span>Trade {symbol} via Bankr</span>
+                <ArrowUpRight size={14} strokeWidth={2} />
+              </Link>
+              <p style={{ fontSize:11, color:'var(--text-3)', marginTop:10, lineHeight:1.6 }}>
+                Available outside US/UK. Execution provided by Bankr. Verification required.
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* About */}
         {(meta || loading) && (
