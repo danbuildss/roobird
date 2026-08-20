@@ -39,6 +39,7 @@ interface LivePrice {
 }
 
 interface AssetMeta {
+  id: string
   name: string
   token_address: string | null
   logo_url: string | null
@@ -742,6 +743,35 @@ export function AssetView({ symbol }: { symbol: string }) {
     fetchContent()
   }, [symbol])
 
+  // Sync watch/bookmark state when asset ID and auth state are known
+  useEffect(() => {
+    if (!authenticated || !meta?.id) { setWatched(false); return }
+    fetch(`/api/v1/bookmarks?target_type=asset&target_id=${meta.id}`)
+      .then(r => r.json())
+      .then(d => setWatched(d.data?.bookmarked ?? false))
+      .catch(() => {})
+  }, [authenticated, meta?.id])
+
+  async function handleWatch() {
+    if (!authenticated) { login(); return }
+    if (!meta?.id) return
+    const next = !watched
+    setWatched(next) // optimistic
+    try {
+      if (next) {
+        await fetch('/api/v1/bookmarks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target_type: 'asset', target_id: meta.id }),
+        })
+      } else {
+        await fetch(`/api/v1/bookmarks?target_type=asset&target_id=${meta.id}`, { method: 'DELETE' })
+      }
+    } catch {
+      setWatched(!next) // revert on error
+    }
+  }
+
   const price = livePrice?.price ?? 0
   const change24h = meta?.prices?.[0]?.change_24h ?? 0
   const up = change24h >= 0
@@ -812,7 +842,7 @@ export function AssetView({ symbol }: { symbol: string }) {
             </div>
 
             <button
-              onClick={() => setWatched(w => !w)}
+              onClick={handleWatch}
               style={{
                 display:'inline-flex', alignItems:'center', gap:7,
                 padding:'8px 16px', borderRadius:'var(--radius-pill)',
