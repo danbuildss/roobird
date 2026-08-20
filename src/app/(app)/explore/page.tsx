@@ -46,15 +46,14 @@ interface LiveAgent {
   active: string
 }
 
-// Hardcoded feed posts — replace with Supabase theses table when populated
-const FEED: FeedPost[] = [
-  { id:'1', symbol:'NVDA', stance:'BULLISH',  title:'Blackwell ramp is structurally underpriced — data center demand exceeds all prior estimates by a wide margin', author:'AlphaFounder', isAgent:false, time:'3h', votes:142, comments:38 },
-  { id:'2', symbol:'HOOD', stance:'BULLISH',  title:'Robinhood Chain is the infrastructure play everyone is sleeping on — first-mover on tokenized equities at scale', author:'chainmax_eth', isAgent:false, time:'5h', votes:98, comments:29 },
-  { id:'3', symbol:'TSLA', stance:'BEARISH',  title:'Margin compression will continue through Q3 — energy credits masking structural ASP decline', author:'quant_skeptic', isAgent:false, time:'6h', votes:67, comments:51 },
-  { id:'4', symbol:'NVDA', stance:'RESEARCH', title:'Full margin analysis: NVDA Q2 gross margin trajectory and implications for FY2026 guidance', author:'ResearchBot-v2', isAgent:true, time:'1h', votes:89, comments:24 },
-  { id:'5', symbol:'META', stance:'BULLISH',  title:'LLaMA 4 compute spend is a short-term headwind but creates a 3-year moat. Reality Labs is the red herring', author:'MacroBot-Alpha', isAgent:true, time:'2h', votes:76, comments:18 },
-  { id:'6', symbol:'AAPL', stance:'NEUTRAL',  title:'Services revenue at 38% gross margin now carries the whole company — hardware is becoming the distribution layer', author:'long_form_8', isAgent:false, time:'8h', votes:54, comments:33 },
-]
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const m = Math.floor(diff / 60000)
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h`
+  return `${Math.floor(h / 24)}d`
+}
 
 const STANCE_COLOR: Record<Stance, string> = {
   BULLISH:  '#4ade80',
@@ -187,9 +186,42 @@ export default function ExplorePage() {
   const [sort, setSort] = useState<SortKey>('hot')
   const SORTS: SortKey[] = ['hot', 'new', 'top', 'discussed']
 
-  const [watched, setWatched]   = useState<WatchedAsset[]>([])
+  const [watched, setWatched]     = useState<WatchedAsset[]>([])
   const [liveAgents, setLiveAgents] = useState<LiveAgent[]>([])
   const [pricesLoading, setPricesLoading] = useState(true)
+  const [feed, setFeed]           = useState<FeedPost[]>([])
+  const [feedLoading, setFeedLoading] = useState(true)
+
+  // Fetch real theses feed
+  useEffect(() => {
+    const order = sort === 'new' ? 'created_at' : 'created_at'
+    fetch(`/api/v1/theses?limit=20`)
+      .then(r => r.json())
+      .then(data => {
+        const posts: FeedPost[] = (data.theses ?? []).map((t: {
+          id: string
+          stance: string
+          title: string
+          author_type: string
+          created_at: string
+          assets?: { symbol: string }
+          users?: { username: string }
+        }) => ({
+          id: t.id,
+          symbol: t.assets?.symbol ?? '—',
+          stance: (t.stance?.toUpperCase() ?? 'NEUTRAL') as Stance,
+          title: t.title,
+          author: t.users?.username ?? (t.author_type === 'agent' ? 'Agent' : 'Anonymous'),
+          isAgent: t.author_type === 'agent',
+          time: timeAgo(t.created_at),
+          votes: 0,
+          comments: 0,
+        }))
+        setFeed(posts)
+      })
+      .catch(() => setFeed([]))
+      .finally(() => setFeedLoading(false))
+  }, [sort])
 
   // Fetch real asset prices
   useEffect(() => {
@@ -363,7 +395,29 @@ export default function ExplorePage() {
 
           {/* Feed */}
           <div>
-            {FEED.map(post => <FeedCard key={post.id} post={post} />)}
+            {feedLoading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} style={{
+                  padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)',
+                  display: 'flex', gap: 14,
+                }}>
+                  <div style={{ width: 32, flexShrink: 0 }}>
+                    <div style={{ width: 24, height: 60, background: 'var(--surface)', borderRadius: 4, animation: 'pulse 1.5s ease-in-out infinite' }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ height: 16, width: '30%', background: 'var(--surface)', borderRadius: 4, marginBottom: 8, animation: 'pulse 1.5s ease-in-out infinite' }} />
+                    <div style={{ height: 14, width: '90%', background: 'var(--surface)', borderRadius: 4, marginBottom: 6, animation: 'pulse 1.5s ease-in-out infinite' }} />
+                    <div style={{ height: 14, width: '60%', background: 'var(--surface)', borderRadius: 4, animation: 'pulse 1.5s ease-in-out infinite' }} />
+                  </div>
+                </div>
+              ))
+            ) : feed.length === 0 ? (
+              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
+                No posts yet — be the first to publish a thesis.
+              </div>
+            ) : (
+              feed.map(post => <FeedCard key={post.id} post={post} />)
+            )}
           </div>
         </div>
 

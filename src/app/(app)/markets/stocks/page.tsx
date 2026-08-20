@@ -67,6 +67,10 @@ export default function StocksScreenerPage() {
         ? assetMeta
         : symbols.map(s => ({ symbol: s, name: s, prices: [] }))
 
+      // Fetch thesis counts per symbol
+      const postCountRes = await fetch('/api/v1/theses/counts').then(r => r.json()).catch(() => null)
+      const postCounts: Record<string, number> = postCountRes?.data?.counts ?? {}
+
       const rows: ScreenerRow[] = baseList.map(a => {
         const lp = livePrices[a.symbol]
         const db = a.prices?.[0]
@@ -77,7 +81,7 @@ export default function StocksScreenerPage() {
           change24h: db?.change_24h ?? null,  // DB (no live equivalent in public API)
           volume:    lp?.volume     ?? null,  // live
           marketCap: db?.market_cap ?? null,  // DB
-          posts:     0,
+          posts:     postCounts[a.symbol] ?? 0,
         }
       })
 

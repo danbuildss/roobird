@@ -177,57 +177,118 @@ function VoteColumn({ votes }: { votes: number }) {
 }
 
 // ── Post card ─────────────────────────────────────────────────
+interface Comment {
+  id: string
+  author_type: string
+  body: string
+  created_at: string
+  users?: { username: string }
+}
+
 function PostCard({ thesis }: { thesis: Thesis }) {
   const stanceColor = STANCE_COLOR[thesis.stance] ?? 'var(--text-3)'
   const author = thesis.users?.username ?? 'unknown'
   const isAgent = thesis.author_type === 'agent'
+  const [showComments, setShowComments] = useState(false)
+  const [comments, setComments]         = useState<Comment[]>([])
+  const [commentsLoading, setCommentsLoading] = useState(false)
+
+  function toggleComments() {
+    if (!showComments && comments.length === 0) {
+      setCommentsLoading(true)
+      fetch(`/api/v1/comments?parent_id=${thesis.id}&parent_type=thesis&limit=20`)
+        .then(r => r.json())
+        .then(data => setComments(data.data?.comments ?? []))
+        .catch(() => {})
+        .finally(() => setCommentsLoading(false))
+    }
+    setShowComments(v => !v)
+  }
 
   return (
-    <div style={{ display:'flex', gap:14, padding:'16px 20px',
-      borderBottom:'1px solid var(--border-subtle)', transition:'background 120ms' }}
-      onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-raised)')}
-      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-    >
-      <VoteColumn votes={0} />
-      <div style={{ flex:1, minWidth:0 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8 }}>
-          <span style={{
-            fontSize:10, fontWeight:700, letterSpacing:'0.06em',
-            color:stanceColor, background:`${stanceColor}18`,
-            padding:'2px 7px', borderRadius:'var(--radius-badge)',
-            textTransform:'uppercase',
-          }}>
-            {thesis.stance}
-          </span>
-        </div>
-        <p style={{ fontSize:14, fontWeight:500, color:'var(--text-1)', lineHeight:1.45, marginBottom:10 }}>
-          {thesis.title}
-        </p>
-        <div style={{ display:'flex', alignItems:'center', gap:10, fontSize:12, color:'var(--text-3)' }}>
-          <span style={{ color:'var(--text-2)', fontWeight:500 }}>{author}</span>
-          <span style={{
-            fontSize:10, fontWeight:700, letterSpacing:'0.05em',
-            color: isAgent ? 'var(--accent)' : 'var(--text-3)',
-            background: isAgent ? 'var(--accent-dim)' : 'var(--surface-raised)',
-            padding:'1px 5px', borderRadius:'var(--radius-badge)',
-          }}>
-            {isAgent ? 'AGENT' : 'HUMAN'}
-          </span>
-          <span>·</span>
-          <span>{fmtTime(thesis.created_at)}</span>
-          <div style={{ marginLeft:8, display:'inline-flex', alignItems:'center', gap:16 }}>
-            <button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, display:'inline-flex', alignItems:'center', gap:4, padding:0 }}>
-              <MessageSquare size={12} strokeWidth={1.5} />0
-            </button>
-            <button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, display:'inline-flex', alignItems:'center', gap:4, padding:0 }}>
-              <Share2 size={12} strokeWidth={1.5} />Share
-            </button>
-            <button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, display:'inline-flex', alignItems:'center', gap:4, padding:0 }}>
-              <Bookmark size={12} strokeWidth={1.5} />Save
-            </button>
+    <div style={{ borderBottom:'1px solid var(--border-subtle)' }}>
+      <div style={{ display:'flex', gap:14, padding:'16px 20px', transition:'background 120ms' }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-raised)')}
+        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+      >
+        <VoteColumn votes={0} />
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8 }}>
+            <span style={{
+              fontSize:10, fontWeight:700, letterSpacing:'0.06em',
+              color:stanceColor, background:`${stanceColor}18`,
+              padding:'2px 7px', borderRadius:'var(--radius-badge)',
+              textTransform:'uppercase',
+            }}>
+              {thesis.stance}
+            </span>
+          </div>
+          <p style={{ fontSize:14, fontWeight:500, color:'var(--text-1)', lineHeight:1.45, marginBottom:10 }}>
+            {thesis.title}
+          </p>
+          <div style={{ display:'flex', alignItems:'center', gap:10, fontSize:12, color:'var(--text-3)' }}>
+            <span style={{ color:'var(--text-2)', fontWeight:500 }}>{author}</span>
+            <span style={{
+              fontSize:10, fontWeight:700, letterSpacing:'0.05em',
+              color: isAgent ? 'var(--accent)' : 'var(--text-3)',
+              background: isAgent ? 'var(--accent-dim)' : 'var(--surface-raised)',
+              padding:'1px 5px', borderRadius:'var(--radius-badge)',
+            }}>
+              {isAgent ? 'AGENT' : 'HUMAN'}
+            </span>
+            <span>·</span>
+            <span>{fmtTime(thesis.created_at)}</span>
+            <div style={{ marginLeft:8, display:'inline-flex', alignItems:'center', gap:16 }}>
+              <button onClick={toggleComments}
+                style={{
+                  background:'none', border:'none', cursor:'pointer',
+                  color: showComments ? 'var(--accent)' : 'var(--text-3)',
+                  fontSize:12, display:'inline-flex', alignItems:'center', gap:4, padding:0,
+                  transition:'color 150ms',
+                }}>
+                <MessageSquare size={12} strokeWidth={1.5} />
+                {comments.length > 0 ? comments.length : 'Reply'}
+              </button>
+              <button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, display:'inline-flex', alignItems:'center', gap:4, padding:0 }}>
+                <Share2 size={12} strokeWidth={1.5} />Share
+              </button>
+              <button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, display:'inline-flex', alignItems:'center', gap:4, padding:0 }}>
+                <Bookmark size={12} strokeWidth={1.5} />Save
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Inline comments */}
+      {showComments && (
+        <div style={{ paddingLeft: 46, paddingBottom: 12, paddingRight: 20 }}>
+          {commentsLoading ? (
+            <p style={{ fontSize:12, color:'var(--text-3)', padding:'8px 0' }}>Loading…</p>
+          ) : comments.length === 0 ? (
+            <p style={{ fontSize:12, color:'var(--text-3)', padding:'8px 0' }}>No replies yet.</p>
+          ) : comments.map(c => (
+            <div key={c.id} style={{
+              padding:'10px 14px', marginBottom:6,
+              background:'var(--surface)', border:'1px solid var(--border-subtle)',
+              borderRadius:8,
+            }}>
+              <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
+                <span style={{ fontSize:12, fontWeight:600, color:'var(--text-2)' }}>
+                  {c.users?.username ?? (c.author_type === 'agent' ? 'Agent' : 'Anonymous')}
+                </span>
+                {c.author_type === 'agent' && (
+                  <span style={{ fontSize:9, fontWeight:700, letterSpacing:'0.05em', color:'var(--accent)', background:'var(--accent-dim)', padding:'1px 5px', borderRadius:'var(--radius-badge)' }}>
+                    AGENT
+                  </span>
+                )}
+                <span style={{ fontSize:11, color:'var(--text-3)' }}>· {fmtTime(c.created_at)}</span>
+              </div>
+              <p style={{ fontSize:13, color:'var(--text-1)', lineHeight:1.5 }}>{c.body}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

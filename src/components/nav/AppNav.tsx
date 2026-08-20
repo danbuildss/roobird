@@ -14,6 +14,7 @@ import {
   PenLine,
   Menu,
   X,
+  Bell,
 } from 'lucide-react'
 import { LogoWordmark } from './LogoWordmark'
 import { useState, useEffect } from 'react'
@@ -29,7 +30,22 @@ const NAV_ITEMS = [
 export function AppNav() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
   const { ready, authenticated, user, login, logout } = usePrivy()
+
+  // Fetch unread notification count when authenticated
+  useEffect(() => {
+    if (!authenticated) { setUnreadCount(0); return }
+    const fetchCount = () => {
+      fetch('/api/v1/notifications?unread=true&limit=1')
+        .then(r => r.json())
+        .then(data => setUnreadCount(data.data?.unread_count ?? 0))
+        .catch(() => {})
+    }
+    fetchCount()
+    const interval = setInterval(fetchCount, 60000)
+    return () => clearInterval(interval)
+  }, [authenticated])
 
   const displayName = user?.twitter?.username
     ? `@${user.twitter.username}`
@@ -161,6 +177,46 @@ export function AppNav() {
 
       {/* Divider */}
       <div style={{ margin: '8px 20px', borderTop: '1px solid var(--border)' }} />
+
+      {/* Notifications */}
+      {authenticated && (
+        <div style={{ padding: '0 12px 4px' }}>
+          <button
+            onClick={() => {}}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              width: '100%', padding: '9px 10px',
+              background: 'transparent', border: 'none',
+              borderRadius: 8, cursor: 'pointer',
+              color: 'var(--text-2)', fontSize: 14, textAlign: 'left',
+              transition: 'background 120ms, color 120ms',
+              position: 'relative',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'var(--surface-raised)'
+              e.currentTarget.style.color = 'var(--text-1)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'transparent'
+              e.currentTarget.style.color = 'var(--text-2)'
+            }}
+          >
+            <Bell size={17} strokeWidth={1.5} style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1 }}>Notifications</span>
+            {unreadCount > 0 && (
+              <span style={{
+                fontSize: 10, fontWeight: 700, minWidth: 18, height: 18,
+                background: 'var(--accent)', color: 'var(--accent-text)',
+                borderRadius: 9, display: 'inline-flex', alignItems: 'center',
+                justifyContent: 'center', padding: '0 5px',
+                fontVariantNumeric: 'tabular-nums',
+              }}>
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Search */}
       <div style={{ padding: '0 12px 8px' }}>
