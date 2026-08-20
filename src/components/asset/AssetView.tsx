@@ -14,6 +14,11 @@ import {
   ChevronUp,
   ChevronDown,
   FileText,
+  Zap,
+  TrendingUp,
+  TrendingDown,
+  BarChart2,
+  FileSearch,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────
@@ -57,6 +62,16 @@ interface Agent {
   slug: string
   name: string
   description: string
+}
+
+interface MarketEvent {
+  id: string
+  event_type: 'price_move' | 'earnings' | 'corporate_action' | 'filing' | 'news' | 'halted'
+  headline: string
+  detail: string | null
+  magnitude: number | null
+  direction: 'up' | 'down' | null
+  occurred_at: string
 }
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -265,6 +280,7 @@ export function AssetView({ symbol }: { symbol: string }) {
   const [meta, setMeta]           = useState<AssetMeta | null>(null)
   const [theses, setTheses]       = useState<Thesis[]>([])
   const [agents, setAgents]       = useState<Agent[]>([])
+  const [events, setEvents]       = useState<MarketEvent[]>([])
   const [loading, setLoading]     = useState(true)
   const [period, setPeriod]       = useState<Period>('1D')
   const [tab, setTab]             = useState<AssetTab>('discussion')
@@ -276,11 +292,12 @@ export function AssetView({ symbol }: { symbol: string }) {
     setLoading(true)
 
     const fetchAll = async () => {
-      const [priceRes, assetsRes, thesesRes, agentsRes] = await Promise.allSettled([
+      const [priceRes, assetsRes, thesesRes, agentsRes, eventsRes] = await Promise.allSettled([
         fetch(`/api/v1/prices/${symbol}`).then(r => r.json()),
         fetch('/api/v1/assets').then(r => r.json()),
         fetch(`/api/v1/theses?symbol=${symbol}&limit=20`).then(r => r.json()),
         fetch('/api/v1/agents?limit=3').then(r => r.json()),
+        fetch(`/api/v1/events?symbol=${symbol}&limit=5`).then(r => r.json()),
       ])
 
       if (priceRes.status === 'fulfilled') {
@@ -297,6 +314,9 @@ export function AssetView({ symbol }: { symbol: string }) {
       }
       if (agentsRes.status === 'fulfilled') {
         setAgents(agentsRes.value.data?.agents ?? [])
+      }
+      if (eventsRes.status === 'fulfilled') {
+        setEvents(eventsRes.value.data?.events ?? [])
       }
 
       setLoading(false)
@@ -427,6 +447,61 @@ export function AssetView({ symbol }: { symbol: string }) {
             ))}
           </div>
         </div>
+
+        {/* Events strip */}
+        {(loading || events.length > 0) && (
+          <div style={{ borderBottom:'1px solid var(--border)' }}>
+            <div style={{ padding:'12px 24px 0', display:'flex', alignItems:'center', gap:6, marginBottom:8 }}>
+              <Zap size={12} strokeWidth={2} style={{ color:'var(--accent)' }} />
+              <span style={{ fontSize:11, fontWeight:600, color:'var(--text-3)', letterSpacing:'0.05em', textTransform:'uppercase' }}>
+                Recent Events
+              </span>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:0 }}>
+              {loading
+                ? [1,2,3].map(i => (
+                    <div key={i} style={{ display:'flex', gap:10, padding:'10px 24px', borderTop:'1px solid var(--border-subtle)' }}>
+                      <div style={{ width:52, height:18, background:'var(--surface-raised)', borderRadius:4, animation:'pulse 1.5s ease-in-out infinite', flexShrink:0 }} />
+                      <div style={{ flex:1, height:14, background:'var(--surface-raised)', borderRadius:4, animation:'pulse 1.5s ease-in-out infinite' }} />
+                      <div style={{ width:28, height:12, background:'var(--surface-raised)', borderRadius:4, animation:'pulse 1.5s ease-in-out infinite', flexShrink:0 }} />
+                    </div>
+                  ))
+                : events.map(ev => {
+                    const typeConfig: Record<MarketEvent['event_type'], { label: string; Icon: React.ElementType; color: string }> = {
+                      price_move:       { label: ev.direction === 'up' ? 'Move ↑' : 'Move ↓', Icon: ev.direction === 'up' ? TrendingUp : TrendingDown, color: ev.direction === 'up' ? 'var(--up)' : 'var(--down)' },
+                      earnings:         { label: 'Earnings', Icon: BarChart2,   color: '#60a5fa' },
+                      corporate_action: { label: 'Corp Act', Icon: Zap,         color: '#f59e0b' },
+                      filing:           { label: 'Filing',   Icon: FileSearch,  color: '#94918d' },
+                      news:             { label: 'News',     Icon: FileText,    color: '#94918d' },
+                      halted:           { label: 'Halted',   Icon: Zap,         color: '#f87171' },
+                    }
+                    const cfg = typeConfig[ev.event_type]
+                    return (
+                      <div key={ev.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 24px', borderTop:'1px solid var(--border-subtle)' }}>
+                        <span style={{
+                          display:'inline-flex', alignItems:'center', gap:4,
+                          fontSize:10, fontWeight:700, letterSpacing:'0.05em',
+                          color: cfg.color, background:`${cfg.color}18`,
+                          padding:'2px 7px', borderRadius:'var(--radius-badge)',
+                          flexShrink:0, whiteSpace:'nowrap',
+                        }}>
+                          <cfg.Icon size={10} strokeWidth={2} />
+                          {cfg.label}
+                        </span>
+                        <p style={{ flex:1, fontSize:13, color:'var(--text-1)', lineHeight:1.35, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                          {ev.headline}
+                        </p>
+                        <span style={{ fontSize:11, color:'var(--text-3)', flexShrink:0 }}>
+                          {fmtTime(ev.occurred_at)}
+                        </span>
+                      </div>
+                    )
+                  })
+              }
+            </div>
+            <div style={{ height:12 }} />
+          </div>
+        )}
 
         {/* Tabs */}
         <div style={{ display:'flex', borderBottom:'1px solid var(--border)', padding:'0 24px' }}>
