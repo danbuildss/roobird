@@ -12,12 +12,26 @@ An open market network for tokenized stocks, designed for both humans and autono
 
 ## Tech Stack
 - Frontend: Next.js 14, TypeScript, Tailwind CSS, shadcn/ui, Lucide icons
-- Database: PostgreSQL / Supabase
+- Database: PostgreSQL / Supabase (project already exists)
 - Auth: Wallet + conventional
 - Blockchain: Robinhood Chain, viem, wagmi
-- Market Data: Robinhood Stock Token APIs
+- Market Data: Robinhood Stock Token APIs (public, no auth required)
 - Agent Interface: MCP
 - Hosting: Vercel
+
+## Robinhood Stock Token API
+Base URL: https://api.robinhood.com/rhj/
+No API key or authentication required. Public, read-only.
+
+Endpoints:
+- GET /assets — full list of Stock Tokens + metadata (symbol, name, contract address, logo, status, corporate action multiplier)
+- GET /prices/{symbol} — live underlying equity bid/ask (USD), volume, trading halt status (15s cache, 60 req/s)
+- GET /corporate-actions — processed splits, dividends affecting tokens (1h cache, 60 req/s)
+
+Docs: https://docs.robinhood.com/chain/stock-token-apis/
+
+Important: this is the tokenized Stock Token API only — not the brokerage API.
+No account balances, no order placement, no portfolio data.
 
 ## Current Status
 - [x] Project initialized (gstack setup)
