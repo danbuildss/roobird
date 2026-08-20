@@ -10,6 +10,7 @@ import {
   Search,
   Wallet,
   ChevronRight,
+  PenLine,
 } from 'lucide-react'
 import { LogoWordmark } from './LogoWordmark'
 
@@ -110,8 +111,36 @@ export function AppNav() {
         })}
       </div>
 
+      {/* Write button */}
+      <div style={{ padding: '4px 12px 8px' }}>
+        <button
+          onClick={() => window.dispatchEvent(new Event('roobird:compose'))}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            width: '100%', padding: '9px 12px',
+            background: 'var(--accent-dim)',
+            border: '1px solid rgba(204,255,0,0.2)',
+            borderRadius: 8, cursor: 'pointer',
+            color: 'var(--accent)', fontSize: 14, fontWeight: 600,
+            transition: 'opacity 150ms',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.opacity = '0.8')}
+          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+          onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.97)')}
+          onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+        >
+          <PenLine size={15} strokeWidth={2} style={{ flexShrink: 0 }} />
+          Write
+          <kbd style={{
+            marginLeft: 'auto', fontSize: 10, color: 'rgba(204,255,0,0.5)',
+            background: 'rgba(204,255,0,0.08)', border: '1px solid rgba(204,255,0,0.15)',
+            borderRadius: 4, padding: '1px 5px', fontFamily: 'var(--font-mono)',
+          }}>⌘N</kbd>
+        </button>
+      </div>
+
       {/* Divider */}
-      <div style={{ margin: '12px 20px', borderTop: '1px solid var(--border)' }} />
+      <div style={{ margin: '8px 20px', borderTop: '1px solid var(--border)' }} />
 
       {/* Search */}
       <div style={{ padding: '0 12px 8px' }}>

@@ -1,5 +1,6 @@
 import { AppNav } from '@/components/nav/AppNav'
 import { CommandPalette } from '@/components/search/CommandPalette'
+import { PostComposer } from '@/components/compose/PostComposer'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -9,6 +10,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
       <CommandPalette />
+      <PostComposer />
     </div>
   )
 }
