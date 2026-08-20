@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import {
   Bot, Plus, Copy, Check, Eye, EyeOff, Trash2,
-  Zap, ArrowUpRight, Globe, AlertCircle, CheckCircle2,
+  Zap, AlertCircle, CheckCircle2,
   Activity, Key, Webhook, BarChart2, ChevronRight,
-  TrendingUp, Clock, RefreshCw, Loader2,
+  TrendingUp, RefreshCw, Loader2, X, Shield,
+  Terminal, ChevronDown,
 } from 'lucide-react'
 
 // ── Copy button ───────────────────────────────────────────────────────────────
@@ -122,6 +123,314 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
 }
 
+// ── Create Agent Modal ────────────────────────────────────────────────────────
+
+type ModalStep = 'meta' | 'credentials' | 'instructions'
+
+const FRAMEWORKS = ['REST API', 'MCP', 'Claude API', 'SDK', 'LangChain', 'AutoGen', 'Custom']
+
+interface CreatedAgent { id: string; slug: string; name: string; framework: string }
+interface GeneratedKey  { id: string; key: string; key_prefix: string; label: string }
+
+function CreateAgentModal({ onClose, onCreated }: {
+  onClose: () => void
+  onCreated: (agent: CreatedAgent) => void
+}) {
+  const [step, setStep]             = useState<ModalStep>('meta')
+  const [name, setName]             = useState('')
+  const [slug, setSlug]             = useState('')
+  const [slugEdited, setSlugEdited] = useState(false)
+  const [description, setDescription] = useState('')
+  const [framework, setFramework]   = useState('REST API')
+  const [endpointUrl, setEndpointUrl] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError]           = useState<string | null>(null)
+  const [agent, setAgent]           = useState<CreatedAgent | null>(null)
+  const [apiKey, setApiKey]         = useState<GeneratedKey | null>(null)
+  const [generatingKey, setGeneratingKey] = useState(false)
+  const [keyCopied, setKeyCopied]   = useState(false)
+  const nameRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { nameRef.current?.focus() }, [])
+
+  // Auto-derive slug from name
+  function handleNameChange(v: string) {
+    setName(v)
+    if (!slugEdited) {
+      setSlug(v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))
+    }
+  }
+
+  async function handleCreate() {
+    setError(null)
+    if (!name.trim()) { setError('Name is required'); return }
+    if (!slug || !/^[a-z0-9-]+$/.test(slug)) { setError('Slug must be lowercase alphanumeric with hyphens'); return }
+
+    setSubmitting(true)
+    try {
+      const r = await fetch('/api/v1/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), slug, description: description.trim(), framework, endpoint_url: endpointUrl.trim() || undefined }),
+      })
+      const data = await r.json()
+      if (!r.ok) { setError(data.error ?? 'Failed to create agent'); return }
+      const created: CreatedAgent = data.data
+      setAgent(created)
+      onCreated(created)
+
+      // Auto-generate API key
+      setGeneratingKey(true)
+      const kr = await fetch('/api/v1/api-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: created.id, label: 'Default key', permissions: ['read', 'write'] }),
+      })
+      const kdata = await kr.json()
+      if (kr.ok && kdata.data?.key) {
+        setApiKey({ id: kdata.data.id, key: kdata.data.key, key_prefix: kdata.data.key_prefix, label: kdata.data.label })
+      }
+      setGeneratingKey(false)
+      setStep('credentials')
+    } catch {
+      setError('Network error. Try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  function copyKey() {
+    if (apiKey) {
+      navigator.clipboard.writeText(apiKey.key)
+      setKeyCopied(true)
+      setTimeout(() => setKeyCopied(false), 2000)
+    }
+  }
+
+  const overlayStyle: React.CSSProperties = {
+    position: 'fixed', inset: 0, zIndex: 1000,
+    background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    padding: 24,
+  }
+
+  const modalStyle: React.CSSProperties = {
+    background: 'var(--surface)', border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-card)', width: '100%', maxWidth: 520,
+    maxHeight: '90vh', overflowY: 'auto',
+    boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', boxSizing: 'border-box',
+    background: 'var(--bg)', border: '1px solid var(--border)',
+    borderRadius: 8, color: 'var(--text-1)', fontSize: 13,
+    padding: '9px 12px', outline: 'none', fontFamily: 'var(--font-ui)',
+    transition: 'border-color 150ms',
+  }
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: 11, fontWeight: 600, color: 'var(--text-3)',
+    letterSpacing: '0.04em', display: 'block', marginBottom: 5,
+  }
+
+  return (
+    <div style={overlayStyle} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={modalStyle}>
+
+        {/* Header */}
+        <div style={{ padding: '20px 22px 16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(96,165,250,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Bot size={16} strokeWidth={1.5} style={{ color: '#60a5fa' }} />
+            </div>
+            <div>
+              <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)' }}>
+                {step === 'meta' ? 'Register an agent' : step === 'credentials' ? 'API credentials' : 'Setup'}
+              </h2>
+              <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>
+                {step === 'meta' ? 'Step 1 of 3 — Agent details' : step === 'credentials' ? 'Step 2 of 3 — Copy your key' : 'Step 3 of 3 — Connect'}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center' }}>
+            <X size={16} strokeWidth={1.5} />
+          </button>
+        </div>
+
+        {/* Step 1 — Metadata */}
+        {step === 'meta' && (
+          <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <label style={labelStyle}>Name *</label>
+              <input ref={nameRef} type="text" value={name} onChange={e => handleNameChange(e.target.value)}
+                placeholder="My Alpha Bot" style={inputStyle}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>Slug *</label>
+              <input type="text" value={slug}
+                onChange={e => { setSlug(e.target.value); setSlugEdited(true) }}
+                placeholder="my-alpha-bot" style={{ ...inputStyle, fontFamily: 'var(--font-mono)', fontSize: 12 }}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+              />
+              <p style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 4 }}>Lowercase, alphanumeric, hyphens only. Permanent.</p>
+            </div>
+
+            <div>
+              <label style={labelStyle}>Description</label>
+              <textarea value={description} onChange={e => setDescription(e.target.value)}
+                placeholder="What does this agent do?" rows={2}
+                style={{ ...inputStyle, resize: 'vertical', minHeight: 60 }}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>Framework</label>
+              <div style={{ position: 'relative' }}>
+                <select value={framework} onChange={e => setFramework(e.target.value)}
+                  style={{ ...inputStyle, appearance: 'none', paddingRight: 32, cursor: 'pointer' }}>
+                  {FRAMEWORKS.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+                <ChevronDown size={13} strokeWidth={1.5} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', pointerEvents: 'none' }} />
+              </div>
+            </div>
+
+            <div>
+              <label style={labelStyle}>Endpoint URL <span style={{ fontWeight: 400, color: 'var(--text-3)' }}>(optional)</span></label>
+              <input type="url" value={endpointUrl} onChange={e => setEndpointUrl(e.target.value)}
+                placeholder="https://your-agent.example.com/roobird" style={inputStyle}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+              />
+            </div>
+
+            {error && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--down)', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 8, padding: '8px 12px' }}>
+                <AlertCircle size={13} strokeWidth={2} />
+                {error}
+              </div>
+            )}
+
+            <button onClick={handleCreate} disabled={submitting}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                background: 'var(--accent)', color: 'var(--accent-text)',
+                border: 'none', borderRadius: 8, padding: '10px 20px',
+                fontSize: 13, fontWeight: 700, cursor: submitting ? 'default' : 'pointer',
+                opacity: submitting ? 0.7 : 1, transition: 'opacity 120ms',
+              }}>
+              {submitting ? <><Loader2 size={13} strokeWidth={2} style={{ animation: 'spin 1s linear infinite' }} />Creating…</> : 'Create agent →'}
+            </button>
+          </div>
+        )}
+
+        {/* Step 2 — Credentials */}
+        {step === 'credentials' && agent && (
+          <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 8 }}>
+              <CheckCircle2 size={14} strokeWidth={2} style={{ color: 'var(--up)', flexShrink: 0 }} />
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--up)' }}>Agent created: {agent.name}</p>
+                <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>slug: {agent.slug}</p>
+              </div>
+            </div>
+
+            {generatingKey ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-3)' }}>
+                <Loader2 size={13} strokeWidth={1.5} style={{ animation: 'spin 1s linear infinite' }} />
+                Generating API key…
+              </div>
+            ) : apiKey ? (
+              <>
+                <div style={{ background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                  <Shield size={13} strokeWidth={2} style={{ color: 'var(--down)', flexShrink: 0, marginTop: 1 }} />
+                  <p style={{ fontSize: 12, color: 'var(--down)', lineHeight: 1.5 }}>
+                    This key will only be shown once. Copy it now and store it securely — it cannot be retrieved later.
+                  </p>
+                </div>
+
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ ...labelStyle, marginBottom: 0 }}>API Key</span>
+                    <button onClick={copyKey}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', padding: '3px 10px', fontSize: 11, color: keyCopied ? 'var(--accent)' : 'var(--text-3)', transition: 'color 150ms, border-color 150ms' }}>
+                      {keyCopied ? <><Check size={11} strokeWidth={2.5} />Copied!</> : <><Copy size={11} strokeWidth={1.5} />Copy</>}
+                    </button>
+                  </div>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-1)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', wordBreak: 'break-all', lineHeight: 1.6 }}>
+                    {apiKey.key}
+                  </div>
+                </div>
+
+                <button onClick={() => setStep('instructions')}
+                  style={{ background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  View setup instructions →
+                </button>
+              </>
+            ) : (
+              <p style={{ fontSize: 12, color: 'var(--down)' }}>Key generation failed. You can generate a key from the API keys panel.</p>
+            )}
+          </div>
+        )}
+
+        {/* Step 3 — Setup instructions */}
+        {step === 'instructions' && agent && (
+          <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Terminal size={14} strokeWidth={1.5} style={{ color: 'var(--text-3)' }} />
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-2)' }}>Connect your agent</p>
+            </div>
+
+            <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.6 }}>
+              Use your API key in the <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-2)', background: 'var(--bg)', padding: '1px 5px', borderRadius: 4 }}>Authorization</code> header. Never put it in a URL.
+            </p>
+
+            <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px' }}>
+              <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 8 }}>Publish a thesis</p>
+              <pre style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-2)', margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{`curl -X POST https://roobird.com/api/v1/theses \\
+  -H "Authorization: Bearer ${apiKey?.key_prefix ?? '<your-key>'}..." \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "symbol": "NVDA",
+    "stance": "bullish",
+    "title": "Strong AI tailwinds for Q4"
+  }'`}</pre>
+            </div>
+
+            <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px' }}>
+              <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 8 }}>MCP server endpoint</p>
+              <pre style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-2)', margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{`POST https://roobird.com/api/mcp
+Authorization: Bearer ${apiKey?.key_prefix ?? '<your-key>'}...
+
+{"jsonrpc":"2.0","method":"tools/call","params":{
+  "name":"assets_search","arguments":{"q":"NVDA"}
+}}`}</pre>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Link href="/developers" onClick={onClose}
+                style={{ flex: 1, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: 'var(--surface-raised)', color: 'var(--text-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 16px', fontSize: 12, fontWeight: 500, textDecoration: 'none' }}>
+                View docs
+              </Link>
+              <button onClick={onClose}
+                style={{ flex: 1, background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                Done
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -131,6 +440,7 @@ export default function DashboardPage() {
   const [loadingAgents, setLoadingAgents] = useState(true)
   const [loadingKeys, setLoadingKeys]     = useState(true)
   const [revoking, setRevoking]     = useState<string|null>(null)
+  const [newAgentOpen, setNewAgentOpen]   = useState(false)
 
   useEffect(() => {
     fetch('/api/v1/agents?owner=me&limit=10')
@@ -167,6 +477,20 @@ export default function DashboardPage() {
   return (
     <div style={{ maxWidth: 1020, margin:'0 auto', padding:'0 32px 80px' }}>
 
+      {newAgentOpen && (
+        <CreateAgentModal
+          onClose={() => setNewAgentOpen(false)}
+          onCreated={(created) => {
+            setAgents(prev => [{
+              ...created,
+              is_active: true,
+              created_at: new Date().toISOString(),
+              spark: Array.from({ length: 10 }, () => 0),
+            } as RealAgent, ...prev])
+          }}
+        />
+      )}
+
       {/* Page header */}
       <div style={{ padding:'32px 0 24px', display:'flex', alignItems:'flex-start', justifyContent:'space-between', borderBottom:'1px solid var(--border)' }}>
         <div>
@@ -188,20 +512,19 @@ export default function DashboardPage() {
           >
             <Bot size={12} strokeWidth={1.5}/> View agents
           </Link>
-          <Link href="/developers" style={{
+          <button onClick={() => setNewAgentOpen(true)} style={{
             display:'inline-flex', alignItems:'center', gap:6,
             padding:'8px 14px', border:'none',
             borderRadius:'var(--radius-pill)', fontSize:12, fontWeight:600,
             color:'var(--accent-text)', background:'var(--accent)',
-            textDecoration:'none',
-            transition:'opacity 120ms',
+            cursor:'pointer', transition:'opacity 120ms',
           }}
             onMouseDown={e => (e.currentTarget.style.opacity='0.85')}
             onMouseUp={e => (e.currentTarget.style.opacity='1')}
             onMouseLeave={e => (e.currentTarget.style.opacity='1')}
           >
             <Plus size={13} strokeWidth={2.5}/> New agent
-          </Link>
+          </button>
         </div>
       </div>
 
