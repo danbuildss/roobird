@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import { LogoWordmark } from '@/components/nav/LogoWordmark'
 
 export default function SignInPage() {
   const [email, setEmail] = useState('')
@@ -22,7 +23,7 @@ export default function SignInPage() {
       setError(error.message)
       setLoading(false)
     } else {
-      window.location.href = '/'
+      window.location.href = '/explore'
     }
   }
 
@@ -71,7 +72,7 @@ export default function SignInPage() {
         return
       }
 
-      window.location.href = '/'
+      window.location.href = '/explore'
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Wallet sign-in failed')
       setLoading(false)
@@ -79,145 +80,157 @@ export default function SignInPage() {
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.card}>
-        <div style={styles.logo}>Roobird</div>
-        <h1 style={styles.heading}>Sign in</h1>
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'var(--bg)',
+      padding: '24px',
+    }}>
+      <div style={{
+        width: '100%',
+        maxWidth: 400,
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-card)',
+        padding: '32px',
+      }}>
+        {/* Logo */}
+        <div style={{ marginBottom: 28 }}>
+          <Link href="/" style={{ textDecoration: 'none', color: 'var(--text-1)' }}>
+            <LogoWordmark size={15} />
+          </Link>
+        </div>
 
-        <button onClick={handleWalletSignIn} disabled={loading} style={styles.walletBtn}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-1)', marginBottom: 24, letterSpacing: '-0.02em' }}>
+          Sign in
+        </h1>
+
+        {/* Wallet button */}
+        <button onClick={handleWalletSignIn} disabled={loading} style={{
+          width: '100%',
+          padding: '10px 16px',
+          background: 'var(--surface-raised)',
+          color: 'var(--text-1)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-pill)',
+          fontSize: 13,
+          fontWeight: 600,
+          cursor: loading ? 'not-allowed' : 'pointer',
+          marginBottom: 16,
+          transition: 'border-color 150ms',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+        }}
+          onMouseEnter={e => { if (!loading) e.currentTarget.style.borderColor = 'var(--text-3)' }}
+          onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 12V22H4V12"/>
+            <path d="M22 7H2v5h20V7z"/>
+            <path d="M12 22V7"/>
+            <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/>
+            <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>
+          </svg>
           {loading ? 'Connecting…' : 'Connect Wallet'}
         </button>
 
-        <div style={styles.divider}><span>or</span></div>
+        {/* Divider */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+          <span style={{ fontSize: 11, color: 'var(--text-3)' }}>or</span>
+          <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+        </div>
 
+        {/* Email form */}
         <form onSubmit={handleEmailSignIn}>
-          <label style={styles.label}>Email</label>
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-3)', marginBottom: 6, letterSpacing: '0.04em' }}>
+            EMAIL
+          </label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            style={styles.input}
             placeholder="you@example.com"
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              padding: '9px 12px',
+              background: 'var(--surface-raised)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-input)',
+              fontSize: 13,
+              color: 'var(--text-1)',
+              outline: 'none',
+              marginBottom: 12,
+              transition: 'border-color 150ms',
+              fontFamily: 'var(--font-ui)',
+            }}
+            onFocus={e => (e.target.style.borderColor = 'rgba(204,255,0,0.4)')}
+            onBlur={e => (e.target.style.borderColor = 'var(--border)')}
           />
-          <label style={styles.label}>Password</label>
+
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-3)', marginBottom: 6, letterSpacing: '0.04em' }}>
+            PASSWORD
+          </label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            style={styles.input}
             placeholder="••••••••"
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              padding: '9px 12px',
+              background: 'var(--surface-raised)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-input)',
+              fontSize: 13,
+              color: 'var(--text-1)',
+              outline: 'none',
+              marginBottom: 4,
+              transition: 'border-color 150ms',
+              fontFamily: 'var(--font-ui)',
+            }}
+            onFocus={e => (e.target.style.borderColor = 'rgba(204,255,0,0.4)')}
+            onBlur={e => (e.target.style.borderColor = 'var(--border)')}
           />
-          {error && <p style={styles.error}>{error}</p>}
-          <button type="submit" disabled={loading} style={styles.submitBtn}>
+
+          {error && (
+            <p style={{ fontSize: 12, color: 'var(--down)', marginTop: 8, marginBottom: 0 }}>{error}</p>
+          )}
+
+          <button type="submit" disabled={loading} style={{
+            width: '100%',
+            padding: '10px 16px',
+            background: loading ? 'var(--surface-raised)' : 'var(--accent)',
+            color: loading ? 'var(--text-3)' : 'var(--accent-text)',
+            border: 'none',
+            borderRadius: 'var(--radius-pill)',
+            fontSize: 13,
+            fontWeight: 700,
+            cursor: loading ? 'not-allowed' : 'pointer',
+            marginTop: 16,
+            transition: 'opacity 120ms',
+          }}
+            onMouseDown={e => { if (!loading) e.currentTarget.style.transform = 'scale(0.96)' }}
+            onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+            onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
+          >
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
 
-        <p style={styles.footer}>
+        <p style={{ fontSize: 12, color: 'var(--text-3)', textAlign: 'center', marginTop: 20 }}>
           No account?{' '}
-          <Link href="/auth/signup" style={styles.link}>Create one</Link>
+          <Link href="/auth/signup" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
+            Create one
+          </Link>
         </p>
       </div>
     </div>
   )
-}
-
-const styles: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'var(--background)',
-    padding: '1.5rem',
-  },
-  card: {
-    width: '100%',
-    maxWidth: '400px',
-    backgroundColor: 'var(--surface)',
-    border: '1px solid var(--border)',
-    borderRadius: '12px',
-    padding: '2rem',
-  },
-  logo: {
-    fontSize: '13px',
-    fontWeight: 600,
-    letterSpacing: '0.08em',
-    textTransform: 'uppercase',
-    color: 'var(--muted)',
-    marginBottom: '1.5rem',
-  },
-  heading: {
-    fontSize: '22px',
-    fontWeight: 600,
-    color: 'var(--foreground)',
-    marginBottom: '1.5rem',
-  },
-  walletBtn: {
-    width: '100%',
-    padding: '0.625rem 1rem',
-    backgroundColor: 'var(--foreground)',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: 500,
-    cursor: 'pointer',
-    marginBottom: '1rem',
-  },
-  divider: {
-    textAlign: 'center',
-    color: 'var(--muted)',
-    fontSize: '12px',
-    margin: '1rem 0',
-    position: 'relative',
-  },
-  label: {
-    display: 'block',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--foreground)',
-    marginBottom: '0.375rem',
-    marginTop: '0.875rem',
-  },
-  input: {
-    width: '100%',
-    padding: '0.5rem 0.75rem',
-    border: '1px solid var(--border)',
-    borderRadius: '6px',
-    fontSize: '14px',
-    color: 'var(--foreground)',
-    backgroundColor: 'var(--surface)',
-    outline: 'none',
-    boxSizing: 'border-box',
-  },
-  submitBtn: {
-    width: '100%',
-    padding: '0.625rem 1rem',
-    backgroundColor: 'var(--accent)',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: 500,
-    cursor: 'pointer',
-    marginTop: '1.25rem',
-  },
-  error: {
-    fontSize: '13px',
-    color: 'var(--red)',
-    marginTop: '0.5rem',
-  },
-  footer: {
-    fontSize: '13px',
-    color: 'var(--muted)',
-    textAlign: 'center',
-    marginTop: '1.25rem',
-  },
-  link: {
-    color: 'var(--accent)',
-    textDecoration: 'none',
-  },
 }
