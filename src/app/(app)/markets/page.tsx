@@ -9,7 +9,6 @@ import {
   ArrowDownRight,
   ChevronRight,
   MessageSquare,
-  Bot,
 } from 'lucide-react'
 
 // Sectors — static (no public API for this)
@@ -67,6 +66,7 @@ export default function MarketsPage() {
   const [moverTab, setMoverTab] = useState<MoverTab>('gainers')
   const [assets, setAssets] = useState<AssetWithPrice[]>([])
   const [loading, setLoading] = useState(true)
+  const [thesisCounts, setThesisCounts] = useState<Record<string, number>>({})
 
   useEffect(() => {
     // Fetch prices for all tracked symbols in parallel
@@ -98,17 +98,21 @@ export default function MarketsPage() {
     })
   }, [])
 
-  // Also fetch asset names from the assets list
+  // Fetch asset names and thesis counts in parallel
   useEffect(() => {
-    fetch('/api/v1/assets?limit=50')
-      .then(r => r.json())
-      .then(data => {
-        if (!data.assets) return
+    Promise.all([
+      fetch('/api/v1/assets?limit=50').then(r => r.json()).catch(() => null),
+      fetch('/api/v1/theses/counts').then(r => r.json()).catch(() => null),
+    ]).then(([assetsData, countsData]) => {
+      if (assetsData?.assets) {
         const nameMap: Record<string, string> = {}
-        for (const a of data.assets) nameMap[a.symbol] = a.name
+        for (const a of assetsData.assets) nameMap[a.symbol] = a.name
         setAssets(prev => prev.map(a => ({ ...a, name: nameMap[a.symbol] ?? a.symbol })))
-      })
-      .catch(() => {/* ignore */})
+      }
+      if (countsData?.data?.counts) {
+        setThesisCounts(countsData.data.counts)
+      }
+    })
   }, [])
 
   const gainers = [...assets].filter(a => a.up).sort((a, b) => parseFloat(b.change) - parseFloat(a.change)).slice(0, 5)
@@ -116,7 +120,11 @@ export default function MarketsPage() {
   const movers  = moverTab === 'gainers' ? gainers : losers
 
   const trending = [...assets].slice(0, 6)
-  const discussed = [...assets].slice(0, 6).map((a, i) => ({ ...a, posts: 241 - i * 30, agents: 8 - i }))
+  const discussed = [...assets]
+    .map(a => ({ ...a, posts: thesisCounts[a.symbol] ?? 0 }))
+    .filter(a => a.posts > 0)
+    .sort((a, b) => b.posts - a.posts)
+    .slice(0, 6)
   const maxPosts = discussed.length ? Math.max(...discussed.map(d => d.posts)) : 1
 
   return (
@@ -302,7 +310,7 @@ export default function MarketsPage() {
             {discussed.map((item, i) => (
               <Link key={item.symbol} href={`/market/${item.symbol}`} style={{ textDecoration: 'none' }}>
                 <div style={{
-                  display: 'grid', gridTemplateColumns: '80px 1fr auto auto',
+                  display: 'grid', gridTemplateColumns: '80px 1fr auto',
                   alignItems: 'center', gap: 16, padding: '13px 16px',
                   borderBottom: i < discussed.length - 1 ? '1px solid var(--border-subtle)' : 'none',
                   cursor: 'pointer', transition: 'background 120ms',
@@ -317,9 +325,6 @@ export default function MarketsPage() {
                   <DiscussionBar value={item.posts} max={maxPosts} />
                   <span style={{ fontSize: 12, color: 'var(--text-2)', fontVariantNumeric: 'tabular-nums', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                     <MessageSquare size={12} strokeWidth={1.5} />{item.posts}
-                  </span>
-                  <span style={{ fontSize: 12, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    <Bot size={12} strokeWidth={2} />{item.agents}
                   </span>
                 </div>
               </Link>

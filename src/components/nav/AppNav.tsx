@@ -14,10 +14,197 @@ import {
   PenLine,
   Menu,
   X,
+  Bell,
+  CheckCheck,
+  MessageSquare,
+  TrendingUp,
+  AlertCircle,
 } from 'lucide-react'
 import { LogoWordmark } from './LogoWordmark'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
+
+// ── Notification types ────────────────────────────────────────────────────────
+
+interface Notification {
+  id: string
+  type: string
+  payload: Record<string, unknown>
+  read_at: string | null
+  created_at: string
+}
+
+function notifIcon(type: string) {
+  if (type.includes('comment') || type.includes('reply')) return <MessageSquare size={14} strokeWidth={1.5} />
+  if (type.includes('thesis') || type.includes('market')) return <TrendingUp size={14} strokeWidth={1.5} />
+  return <AlertCircle size={14} strokeWidth={1.5} />
+}
+
+function notifText(n: Notification): string {
+  const p = n.payload
+  if (p.message && typeof p.message === 'string') return p.message
+  if (n.type === 'comment.reply') return `${p.actor ?? 'Someone'} replied to your comment`
+  if (n.type === 'thesis.reaction') return `${p.actor ?? 'Someone'} reacted to your thesis`
+  if (n.type === 'agent.action') return `Agent ${p.agent_name ?? ''} performed an action`
+  return n.type.replace(/\./g, ' → ')
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const m = Math.floor(diff / 60000)
+  if (m < 1) return 'just now'
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
+// ── NotificationsPanel ────────────────────────────────────────────────────────
+
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const [notifs, setNotifs] = useState<Notification[]>([])
+  const [loading, setLoading] = useState(true)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    fetch('/api/v1/notifications?limit=30')
+      .then(r => r.json())
+      .then(d => setNotifs(d.data?.notifications ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [onClose])
+
+  function markAllRead() {
+    fetch('/api/v1/notifications', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+      .catch(() => {})
+    setNotifs(prev => prev.map(n => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })))
+  }
+
+  const unread = notifs.filter(n => !n.read_at).length
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        style={{ position: 'fixed', inset: 0, zIndex: 300 }}
+        onClick={onClose}
+      />
+      {/* Panel */}
+      <div
+        ref={panelRef}
+        style={{
+          position: 'fixed', top: 0, left: 240, bottom: 0,
+          width: 340, zIndex: 301,
+          background: 'var(--surface)',
+          borderRight: '1px solid var(--border)',
+          display: 'flex', flexDirection: 'column',
+          boxShadow: '4px 0 24px rgba(0,0,0,0.3)',
+        }}
+      >
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '16px 16px 12px',
+          borderBottom: '1px solid var(--border)',
+        }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)' }}>
+            Notifications
+            {unread > 0 && (
+              <span style={{
+                marginLeft: 8, fontSize: 10, fontWeight: 700,
+                background: 'var(--accent)', color: 'var(--accent-text)',
+                borderRadius: 9, padding: '1px 6px',
+              }}>
+                {unread}
+              </span>
+            )}
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {unread > 0 && (
+              <button
+                onClick={markAllRead}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--text-3)', padding: '4px 6px',
+                  borderRadius: 6, fontSize: 11, display: 'flex', alignItems: 'center', gap: 4,
+                }}
+                title="Mark all read"
+              >
+                <CheckCheck size={13} strokeWidth={1.5} />
+                Mark all read
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 4 }}
+              aria-label="Close"
+            >
+              <X size={16} strokeWidth={1.5} />
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {loading ? (
+            <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
+              Loading…
+            </div>
+          ) : notifs.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center' }}>
+              <Bell size={28} strokeWidth={1} style={{ color: 'var(--text-3)', marginBottom: 8 }} />
+              <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>No notifications yet</p>
+            </div>
+          ) : (
+            notifs.map(n => (
+              <div
+                key={n.id}
+                style={{
+                  display: 'flex', gap: 10, padding: '12px 16px',
+                  borderBottom: '1px solid var(--border)',
+                  background: n.read_at ? 'transparent' : 'rgba(204,255,0,0.03)',
+                  transition: 'background 120ms',
+                }}
+              >
+                <div style={{
+                  width: 28, height: 28, borderRadius: 7, flexShrink: 0,
+                  background: 'var(--surface-raised)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: n.read_at ? 'var(--text-3)' : 'var(--accent)',
+                }}>
+                  {notifIcon(n.type)}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{
+                    margin: 0, fontSize: 13, color: n.read_at ? 'var(--text-2)' : 'var(--text-1)',
+                    lineHeight: 1.4,
+                  }}>
+                    {notifText(n)}
+                  </p>
+                  <p style={{ margin: '3px 0 0', fontSize: 11, color: 'var(--text-3)' }}>
+                    {timeAgo(n.created_at)}
+                  </p>
+                </div>
+                {!n.read_at && (
+                  <div style={{
+                    width: 6, height: 6, borderRadius: '50%',
+                    background: 'var(--accent)', flexShrink: 0, marginTop: 6,
+                  }} />
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
 
 const NAV_ITEMS = [
   { href: '/explore',    label: 'Explore',    Icon: Compass   },
@@ -29,7 +216,23 @@ const NAV_ITEMS = [
 export function AppNav() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [notifOpen, setNotifOpen] = useState(false)
   const { ready, authenticated, user, login, logout } = usePrivy()
+
+  // Fetch unread notification count when authenticated
+  useEffect(() => {
+    if (!authenticated) { setUnreadCount(0); return }
+    const fetchCount = () => {
+      fetch('/api/v1/notifications?unread=true&limit=1')
+        .then(r => r.json())
+        .then(data => setUnreadCount(data.data?.unread_count ?? 0))
+        .catch(() => {})
+    }
+    fetchCount()
+    const interval = setInterval(fetchCount, 60000)
+    return () => clearInterval(interval)
+  }, [authenticated])
 
   const displayName = user?.twitter?.username
     ? `@${user.twitter.username}`
@@ -39,8 +242,8 @@ export function AppNav() {
         ? `${user.wallet.address.slice(0, 6)}…${user.wallet.address.slice(-4)}`
         : null
 
-  // Close drawer when navigating
-  useEffect(() => { setMobileOpen(false) }, [pathname])
+  // Close drawer and notifications panel when navigating
+  useEffect(() => { setMobileOpen(false); setNotifOpen(false) }, [pathname])
 
   // Prevent body scroll when drawer open
   useEffect(() => {
@@ -161,6 +364,46 @@ export function AppNav() {
 
       {/* Divider */}
       <div style={{ margin: '8px 20px', borderTop: '1px solid var(--border)' }} />
+
+      {/* Notifications */}
+      {authenticated && (
+        <div style={{ padding: '0 12px 4px' }}>
+          <button
+            onClick={() => setNotifOpen(o => !o)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              width: '100%', padding: '9px 10px',
+              background: notifOpen ? 'var(--surface-raised)' : 'transparent', border: 'none',
+              borderRadius: 8, cursor: 'pointer',
+              color: notifOpen ? 'var(--text-1)' : 'var(--text-2)', fontSize: 14, textAlign: 'left',
+              transition: 'background 120ms, color 120ms',
+              position: 'relative',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'var(--surface-raised)'
+              e.currentTarget.style.color = 'var(--text-1)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'transparent'
+              e.currentTarget.style.color = 'var(--text-2)'
+            }}
+          >
+            <Bell size={17} strokeWidth={1.5} style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1 }}>Notifications</span>
+            {unreadCount > 0 && (
+              <span style={{
+                fontSize: 10, fontWeight: 700, minWidth: 18, height: 18,
+                background: 'var(--accent)', color: 'var(--accent-text)',
+                borderRadius: 9, display: 'inline-flex', alignItems: 'center',
+                justifyContent: 'center', padding: '0 5px',
+                fontVariantNumeric: 'tabular-nums',
+              }}>
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Search */}
       <div style={{ padding: '0 12px 8px' }}>
@@ -387,6 +630,11 @@ export function AppNav() {
           .nav-close-btn { display: block !important; }
         }
       `}</style>
+
+      {/* Notifications panel */}
+      {notifOpen && authenticated && (
+        <NotificationsPanel onClose={() => setNotifOpen(false)} />
+      )}
     </>
   )
 }

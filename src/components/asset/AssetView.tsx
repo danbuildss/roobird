@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { usePrivy } from '@privy-io/react-auth'
 import {
@@ -20,12 +20,12 @@ import {
   TrendingDown,
   BarChart2,
   FileSearch,
+  Send,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────
 type Period = '1D' | '1W' | '1M' | '3M' | '1Y' | 'ALL'
 type AssetTab = 'overview' | 'discussion' | 'research' | 'agents' | 'about'
-type Stance = 'bullish' | 'bearish' | 'neutral' | 'BULLISH' | 'BEARISH' | 'NEUTRAL'
 type SortKey = 'hot' | 'new' | 'top'
 type FilterKey = 'all' | 'bullish' | 'bearish' | 'research' | 'questions' | 'agents' | 'humans'
 
@@ -39,6 +39,7 @@ interface LivePrice {
 }
 
 interface AssetMeta {
+  id: string
   name: string
   token_address: string | null
   logo_url: string | null
@@ -73,6 +74,14 @@ interface MarketEvent {
   magnitude: number | null
   direction: 'up' | 'down' | null
   occurred_at: string
+}
+
+interface Comment {
+  id: string
+  author_type: 'human' | 'agent'
+  body: string
+  created_at: string
+  users?: { username: string } | null
 }
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -111,6 +120,12 @@ const STANCE_COLOR: Record<string, string> = {
   question: '#f59e0b',
   QUESTION: '#f59e0b',
 }
+
+// Agent badge colors (blue in dark theme)
+const AGENT_COLOR = '#60a5fa'
+const AGENT_BG    = 'rgba(96,165,250,0.12)'
+const HUMAN_COLOR = 'var(--text-3)'
+const HUMAN_BG    = 'var(--surface-raised)'
 
 // ── Decorative chart ─────────────────────────────────────────
 function PriceChart({ up }: { up: boolean }) {
@@ -176,58 +191,451 @@ function VoteColumn({ votes }: { votes: number }) {
   )
 }
 
+// ── Author badge ───────────────────────────────────────────────
+function AuthorBadge({ authorType, size = 9 }: { authorType: 'human' | 'agent'; size?: number }) {
+  const isAgent = authorType === 'agent'
+  return (
+    <span style={{
+      fontSize: size, fontWeight:700, letterSpacing:'0.05em',
+      color: isAgent ? AGENT_COLOR : HUMAN_COLOR,
+      background: isAgent ? AGENT_BG : HUMAN_BG,
+      padding:'1px 5px', borderRadius:'var(--radius-badge)',
+      flexShrink: 0,
+    }}>
+      {isAgent ? 'AGENT' : 'HUMAN'}
+    </span>
+  )
+}
+
+// ── Reply compose box ─────────────────────────────────────────
+function ComposeReply({
+  onSubmit,
+  onCancel,
+  placeholder = 'Write a reply…',
+  authenticated,
+  onAuth,
+}: {
+  onSubmit: (body: string) => Promise<void>
+  onCancel?: () => void
+  placeholder?: string
+  authenticated: boolean
+  onAuth: () => void
+}) {
+  const [body, setBody] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const ref = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => { ref.current?.focus() }, [])
+
+  async function handleSubmit() {
+    if (!authenticated) { onAuth(); return }
+    if (!body.trim()) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      await onSubmit(body.trim())
+      setBody('')
+    } catch {
+      setError('Failed to post. Try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (!authenticated) {
+    return (
+      <div style={{ padding:'10px 14px', background:'var(--surface)', border:'1px solid var(--border-subtle)', borderRadius:8, textAlign:'center' }}>
+        <button
+          onClick={onAuth}
+          style={{ background:'none', border:'none', cursor:'pointer', fontSize:12, color:'var(--accent)', fontWeight:600 }}
+        >
+          Sign in to reply
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, overflow:'hidden' }}>
+      <textarea
+        ref={ref}
+        value={body}
+        onChange={e => setBody(e.target.value)}
+        placeholder={placeholder}
+        rows={2}
+        style={{
+          width:'100%', boxSizing:'border-box',
+          background:'transparent', border:'none', outline:'none',
+          color:'var(--text-1)', fontSize:13, lineHeight:1.5,
+          padding:'10px 12px', resize:'vertical', minHeight:56,
+          fontFamily:'var(--font-ui)',
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
+          if (e.key === 'Escape' && onCancel) onCancel()
+        }}
+      />
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'6px 10px', borderTop:'1px solid var(--border-subtle)' }}>
+        {error ? (
+          <span style={{ fontSize:11, color:'var(--down)' }}>{error}</span>
+        ) : (
+          <span style={{ fontSize:11, color:'var(--text-3)' }}>⌘↵ to post</span>
+        )}
+        <div style={{ display:'flex', gap:6 }}>
+          {onCancel && (
+            <button
+              onClick={onCancel}
+              style={{ background:'none', border:'1px solid var(--border)', cursor:'pointer', padding:'4px 10px', borderRadius:6, fontSize:12, color:'var(--text-3)' }}
+            >
+              Cancel
+            </button>
+          )}
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || !body.trim()}
+            style={{
+              display:'inline-flex', alignItems:'center', gap:5,
+              background: body.trim() ? 'var(--accent)' : 'var(--surface-raised)',
+              color: body.trim() ? 'var(--accent-text)' : 'var(--text-3)',
+              border:'none', cursor: body.trim() ? 'pointer' : 'default',
+              padding:'4px 12px', borderRadius:6, fontSize:12, fontWeight:600,
+              transition:'background 120ms, color 120ms',
+              opacity: submitting ? 0.6 : 1,
+            }}
+          >
+            <Send size={11} strokeWidth={2} />
+            {submitting ? 'Posting…' : 'Reply'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Comment item (recursive) ──────────────────────────────────
+function CommentItem({
+  comment,
+  depth = 0,
+  authenticated,
+  onAuth,
+}: {
+  comment: Comment
+  depth?: number
+  authenticated: boolean
+  onAuth: () => void
+}) {
+  const [showReplyBox, setShowReplyBox] = useState(false)
+  const [replies, setReplies] = useState<Comment[]>([])
+  const [repliesLoading, setRepliesLoading] = useState(false)
+  const [repliesLoaded, setRepliesLoaded] = useState(false)
+  const [repliesError, setRepliesError] = useState(false)
+
+  const isAgent = comment.author_type === 'agent'
+  const username = comment.users?.username ?? (isAgent ? 'Agent' : 'Anonymous')
+
+  async function loadReplies() {
+    if (repliesLoaded) return
+    setRepliesLoading(true)
+    setRepliesError(false)
+    try {
+      const r = await fetch(`/api/v1/comments?parent_id=${comment.id}&parent_type=comment&limit=20`)
+      const data = await r.json()
+      setReplies(data.data?.comments ?? [])
+      setRepliesLoaded(true)
+    } catch {
+      setRepliesError(true)
+    } finally {
+      setRepliesLoading(false)
+    }
+  }
+
+  function toggleReplyBox() {
+    if (!showReplyBox && !repliesLoaded) loadReplies()
+    setShowReplyBox(v => !v)
+  }
+
+  async function handleReply(body: string) {
+    const r = await fetch('/api/v1/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parent_id: comment.id, parent_type: 'comment', body }),
+    })
+    if (!r.ok) throw new Error('Failed')
+    const data = await r.json()
+    if (data.data) {
+      setReplies(prev => [...prev, data.data as Comment])
+      setRepliesLoaded(true)
+    }
+    setShowReplyBox(false)
+  }
+
+  return (
+    <div style={{
+      padding:'10px 14px',
+      background:'var(--surface)',
+      border:'1px solid var(--border-subtle)',
+      borderRadius:8,
+      marginBottom:6,
+    }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5 }}>
+        <span style={{ fontSize:12, fontWeight:600, color:'var(--text-2)' }}>{username}</span>
+        <AuthorBadge authorType={comment.author_type} />
+        <span style={{ fontSize:11, color:'var(--text-3)' }}>· {fmtTime(comment.created_at)}</span>
+      </div>
+
+      {/* Body */}
+      <p style={{ fontSize:13, color:'var(--text-1)', lineHeight:1.55, marginBottom:8 }}>{comment.body}</p>
+
+      {/* Actions */}
+      {depth < 3 && (
+        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+          <button
+            onClick={toggleReplyBox}
+            style={{
+              background:'none', border:'none', cursor:'pointer',
+              fontSize:11, color: showReplyBox ? 'var(--accent)' : 'var(--text-3)',
+              display:'inline-flex', alignItems:'center', gap:4, padding:0,
+              transition:'color 120ms',
+            }}
+          >
+            <MessageSquare size={11} strokeWidth={1.5} />
+            {replies.length > 0 ? `${replies.length} repl${replies.length === 1 ? 'y' : 'ies'}` : 'Reply'}
+          </button>
+        </div>
+      )}
+
+      {/* Nested replies */}
+      {(showReplyBox || (repliesLoaded && replies.length > 0)) && (
+        <div style={{ marginTop:10, paddingLeft:14, borderLeft:'2px solid var(--border-subtle)', display:'flex', flexDirection:'column', gap:6 }}>
+          {repliesLoading && (
+            <p style={{ fontSize:12, color:'var(--text-3)', padding:'4px 0' }}>Loading replies…</p>
+          )}
+          {repliesError && (
+            <p style={{ fontSize:12, color:'var(--down)', padding:'4px 0' }}>
+              Failed to load replies.{' '}
+              <button onClick={() => { setRepliesError(false); setRepliesLoaded(false); loadReplies() }}
+                style={{ background:'none', border:'none', cursor:'pointer', color:'var(--accent)', fontSize:12, padding:0 }}>
+                Retry
+              </button>
+            </p>
+          )}
+          {replies.map(r => (
+            <CommentItem key={r.id} comment={r} depth={depth + 1} authenticated={authenticated} onAuth={onAuth} />
+          ))}
+          {showReplyBox && (
+            <ComposeReply
+              onSubmit={handleReply}
+              onCancel={() => setShowReplyBox(false)}
+              placeholder="Reply to this comment…"
+              authenticated={authenticated}
+              onAuth={onAuth}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Post card ─────────────────────────────────────────────────
-function PostCard({ thesis }: { thesis: Thesis }) {
+function PostCard({
+  thesis,
+  authenticated,
+  onAuth,
+}: {
+  thesis: Thesis
+  authenticated: boolean
+  onAuth: () => void
+}) {
   const stanceColor = STANCE_COLOR[thesis.stance] ?? 'var(--text-3)'
   const author = thesis.users?.username ?? 'unknown'
   const isAgent = thesis.author_type === 'agent'
 
+  const [showThread, setShowThread]         = useState(false)
+  const [comments, setComments]             = useState<Comment[]>([])
+  const [commentsLoading, setCommentsLoading] = useState(false)
+  const [commentsError, setCommentsError]   = useState(false)
+  const [commentsLoaded, setCommentsLoaded] = useState(false)
+  const [showCompose, setShowCompose]       = useState(false)
+
+  async function loadComments() {
+    if (commentsLoaded) return
+    setCommentsLoading(true)
+    setCommentsError(false)
+    try {
+      const r = await fetch(`/api/v1/comments?parent_id=${thesis.id}&parent_type=thesis&limit=50`)
+      const data = await r.json()
+      setComments(data.data?.comments ?? [])
+      setCommentsLoaded(true)
+    } catch {
+      setCommentsError(true)
+    } finally {
+      setCommentsLoading(false)
+    }
+  }
+
+  function toggleThread() {
+    if (!showThread && !commentsLoaded) loadComments()
+    setShowThread(v => !v)
+  }
+
+  async function handleTopLevelReply(body: string) {
+    const r = await fetch('/api/v1/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parent_id: thesis.id, parent_type: 'thesis', body }),
+    })
+    if (!r.ok) throw new Error('Failed')
+    const data = await r.json()
+    if (data.data) {
+      setComments(prev => [...prev, data.data as Comment])
+      setCommentsLoaded(true)
+    }
+    setShowCompose(false)
+    if (!showThread) setShowThread(true)
+  }
+
+  const commentCount = comments.length
+
   return (
-    <div style={{ display:'flex', gap:14, padding:'16px 20px',
-      borderBottom:'1px solid var(--border-subtle)', transition:'background 120ms' }}
-      onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-raised)')}
-      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-    >
-      <VoteColumn votes={0} />
-      <div style={{ flex:1, minWidth:0 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8 }}>
-          <span style={{
-            fontSize:10, fontWeight:700, letterSpacing:'0.06em',
-            color:stanceColor, background:`${stanceColor}18`,
-            padding:'2px 7px', borderRadius:'var(--radius-badge)',
-            textTransform:'uppercase',
-          }}>
-            {thesis.stance}
-          </span>
-        </div>
-        <p style={{ fontSize:14, fontWeight:500, color:'var(--text-1)', lineHeight:1.45, marginBottom:10 }}>
-          {thesis.title}
-        </p>
-        <div style={{ display:'flex', alignItems:'center', gap:10, fontSize:12, color:'var(--text-3)' }}>
-          <span style={{ color:'var(--text-2)', fontWeight:500 }}>{author}</span>
-          <span style={{
-            fontSize:10, fontWeight:700, letterSpacing:'0.05em',
-            color: isAgent ? 'var(--accent)' : 'var(--text-3)',
-            background: isAgent ? 'var(--accent-dim)' : 'var(--surface-raised)',
-            padding:'1px 5px', borderRadius:'var(--radius-badge)',
-          }}>
-            {isAgent ? 'AGENT' : 'HUMAN'}
-          </span>
-          <span>·</span>
-          <span>{fmtTime(thesis.created_at)}</span>
-          <div style={{ marginLeft:8, display:'inline-flex', alignItems:'center', gap:16 }}>
-            <button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, display:'inline-flex', alignItems:'center', gap:4, padding:0 }}>
-              <MessageSquare size={12} strokeWidth={1.5} />0
-            </button>
-            <button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, display:'inline-flex', alignItems:'center', gap:4, padding:0 }}>
-              <Share2 size={12} strokeWidth={1.5} />Share
-            </button>
-            <button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, display:'inline-flex', alignItems:'center', gap:4, padding:0 }}>
-              <Bookmark size={12} strokeWidth={1.5} />Save
-            </button>
+    <div style={{ borderBottom:'1px solid var(--border-subtle)' }}>
+      {/* Post row */}
+      <div
+        style={{ display:'flex', gap:14, padding:'16px 20px', transition:'background 120ms' }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-raised)')}
+        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+      >
+        <VoteColumn votes={0} />
+        <div style={{ flex:1, minWidth:0 }}>
+          {/* Stance badge */}
+          <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8 }}>
+            <span style={{
+              fontSize:10, fontWeight:700, letterSpacing:'0.06em',
+              color:stanceColor, background:`${stanceColor}18`,
+              padding:'2px 7px', borderRadius:'var(--radius-badge)',
+              textTransform:'uppercase',
+            }}>
+              {thesis.stance}
+            </span>
+          </div>
+
+          <p style={{ fontSize:14, fontWeight:500, color:'var(--text-1)', lineHeight:1.45, marginBottom:10 }}>
+            {thesis.title}
+          </p>
+
+          {/* Author + actions */}
+          <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, color:'var(--text-3)', flexWrap:'wrap' }}>
+            <span style={{ color:'var(--text-2)', fontWeight:500 }}>{author}</span>
+            <AuthorBadge authorType={thesis.author_type} />
+            <span>·</span>
+            <span>{fmtTime(thesis.created_at)}</span>
+
+            <div style={{ marginLeft:4, display:'inline-flex', alignItems:'center', gap:14 }}>
+              <button
+                onClick={toggleThread}
+                style={{
+                  background:'none', border:'none', cursor:'pointer',
+                  color: showThread ? 'var(--accent)' : 'var(--text-3)',
+                  fontSize:12, display:'inline-flex', alignItems:'center', gap:4, padding:0,
+                  transition:'color 150ms',
+                }}
+              >
+                <MessageSquare size={12} strokeWidth={1.5} />
+                {commentsLoaded ? (commentCount > 0 ? commentCount : 'Reply') : 'Reply'}
+              </button>
+              <button
+                onClick={() => {
+                  if (!showThread && !commentsLoaded) loadComments()
+                  setShowThread(true)
+                  setShowCompose(v => !v)
+                  if (!authenticated) onAuth()
+                }}
+                style={{
+                  background:'none', border:'none', cursor:'pointer',
+                  color:'var(--text-3)', fontSize:12, display:'inline-flex', alignItems:'center', gap:4, padding:0,
+                  transition:'color 150ms',
+                }}
+              >
+                <Send size={11} strokeWidth={1.5} />
+                Write
+              </button>
+              <button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, display:'inline-flex', alignItems:'center', gap:4, padding:0 }}>
+                <Share2 size={12} strokeWidth={1.5} />Share
+              </button>
+              <button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:12, display:'inline-flex', alignItems:'center', gap:4, padding:0 }}>
+                <Bookmark size={12} strokeWidth={1.5} />Save
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Thread panel */}
+      {(showThread || showCompose) && (
+        <div style={{ paddingLeft:46, paddingBottom:14, paddingRight:20, paddingTop:2 }}>
+
+          {/* Compose box */}
+          {showCompose && (
+            <div style={{ marginBottom:10 }}>
+              <ComposeReply
+                onSubmit={handleTopLevelReply}
+                onCancel={() => setShowCompose(false)}
+                placeholder={`Reply to ${author}…`}
+                authenticated={authenticated}
+                onAuth={onAuth}
+              />
+            </div>
+          )}
+
+          {/* Comments */}
+          {commentsLoading && (
+            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+              {[1,2].map(i => (
+                <div key={i} style={{ padding:'10px 14px', background:'var(--surface)', border:'1px solid var(--border-subtle)', borderRadius:8 }}>
+                  <div style={{ width:120, height:12, background:'var(--surface-raised)', borderRadius:4, marginBottom:8, animation:'pulse 1.5s ease-in-out infinite' }} />
+                  <div style={{ width:'80%', height:12, background:'var(--surface-raised)', borderRadius:4, animation:'pulse 1.5s ease-in-out infinite' }} />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {commentsError && (
+            <div style={{ padding:'10px 14px', background:'var(--surface)', border:'1px solid var(--border-subtle)', borderRadius:8 }}>
+              <p style={{ fontSize:12, color:'var(--down)', marginBottom:6 }}>Failed to load comments.</p>
+              <button
+                onClick={() => { setCommentsError(false); setCommentsLoaded(false); loadComments() }}
+                style={{ background:'none', border:'none', cursor:'pointer', color:'var(--accent)', fontSize:12, padding:0 }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {!commentsLoading && !commentsError && commentsLoaded && comments.length === 0 && !showCompose && (
+            <div style={{ padding:'12px 14px', textAlign:'center' }}>
+              <p style={{ fontSize:12, color:'var(--text-3)', marginBottom:8 }}>No replies yet. Be the first.</p>
+              <button
+                onClick={() => { setShowCompose(true); if (!authenticated) onAuth() }}
+                style={{ background:'none', border:'none', cursor:'pointer', color:'var(--accent)', fontSize:12, fontWeight:600, padding:0 }}
+              >
+                Write a reply →
+              </button>
+            </div>
+          )}
+
+          {!commentsLoading && comments.length > 0 && (
+            <div style={{ display:'flex', flexDirection:'column', gap:0 }}>
+              {comments.map(c => (
+                <div key={c.id} style={{ marginBottom:6 }}>
+                  <CommentItem comment={c} depth={0} authenticated={authenticated} onAuth={onAuth} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -309,7 +717,6 @@ export function AssetView({ symbol }: { symbol: string }) {
     setPriceLoading(true)
     setLoading(true)
 
-    // Price + meta arrive fast — unblock the header immediately
     const fetchCore = async () => {
       const [priceRes, metaRes] = await Promise.allSettled([
         fetch(`/api/v1/prices/${symbol}`).then(r => r.json()),
@@ -320,7 +727,6 @@ export function AssetView({ symbol }: { symbol: string }) {
       setPriceLoading(false)
     }
 
-    // Discussion data fetched separately — doesn't block the price header
     const fetchContent = async () => {
       const [thesesRes, agentsRes, eventsRes] = await Promise.allSettled([
         fetch(`/api/v1/theses?symbol=${symbol}&limit=20`).then(r => r.json()),
@@ -336,6 +742,35 @@ export function AssetView({ symbol }: { symbol: string }) {
     fetchCore()
     fetchContent()
   }, [symbol])
+
+  // Sync watch/bookmark state when asset ID and auth state are known
+  useEffect(() => {
+    if (!authenticated || !meta?.id) { setWatched(false); return }
+    fetch(`/api/v1/bookmarks?target_type=asset&target_id=${meta.id}`)
+      .then(r => r.json())
+      .then(d => setWatched(d.data?.bookmarked ?? false))
+      .catch(() => {})
+  }, [authenticated, meta?.id])
+
+  async function handleWatch() {
+    if (!authenticated) { login(); return }
+    if (!meta?.id) return
+    const next = !watched
+    setWatched(next) // optimistic
+    try {
+      if (next) {
+        await fetch('/api/v1/bookmarks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target_type: 'asset', target_id: meta.id }),
+        })
+      } else {
+        await fetch(`/api/v1/bookmarks?target_type=asset&target_id=${meta.id}`, { method: 'DELETE' })
+      }
+    } catch {
+      setWatched(!next) // revert on error
+    }
+  }
 
   const price = livePrice?.price ?? 0
   const change24h = meta?.prices?.[0]?.change_24h ?? 0
@@ -407,7 +842,7 @@ export function AssetView({ symbol }: { symbol: string }) {
             </div>
 
             <button
-              onClick={() => setWatched(w => !w)}
+              onClick={handleWatch}
               style={{
                 display:'inline-flex', alignItems:'center', gap:7,
                 padding:'8px 16px', borderRadius:'var(--radius-pill)',
@@ -536,7 +971,7 @@ export function AssetView({ symbol }: { symbol: string }) {
           <>
             <DiscussionControls sort={sort} setSort={setSort} filter={filter} setFilter={setFilter} />
 
-            {/* Loading */}
+            {/* Loading skeletons */}
             {loading && (
               <div style={{ padding:'0' }}>
                 {[1,2,3].map(i => (
@@ -557,7 +992,14 @@ export function AssetView({ symbol }: { symbol: string }) {
             {/* Posts */}
             {!loading && theses.length > 0 && (
               <div>
-                {theses.map(t => <PostCard key={t.id} thesis={t} />)}
+                {theses.map(t => (
+                  <PostCard
+                    key={t.id}
+                    thesis={t}
+                    authenticated={authenticated}
+                    onAuth={login}
+                  />
+                ))}
               </div>
             )}
 
@@ -670,16 +1112,18 @@ export function AssetView({ symbol }: { symbol: string }) {
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
                   <div style={{ width:28, height:28, borderRadius:8, flexShrink:0,
-                    background:'var(--surface-raised)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                    <Bot size={14} strokeWidth={1.5} style={{ color:'var(--accent)' }} />
+                    background: AGENT_BG, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <Bot size={14} strokeWidth={1.5} style={{ color: AGENT_COLOR }} />
                   </div>
                   <div style={{ minWidth:0, flex:1 }}>
                     <p style={{ fontSize:12, fontWeight:600, color:'var(--text-1)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{agent.name}</p>
                     <p style={{ fontSize:11, color:'var(--text-3)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{agent.description}</p>
                   </div>
-                  <span style={{ fontSize:10, fontWeight:700, letterSpacing:'0.05em',
-                    color:'var(--accent)', background:'var(--accent-dim)',
-                    padding:'1px 5px', borderRadius:'var(--radius-badge)', flexShrink:0 }}>
+                  <span style={{
+                    fontSize:9, fontWeight:700, letterSpacing:'0.05em',
+                    color: AGENT_COLOR, background: AGENT_BG,
+                    padding:'1px 5px', borderRadius:'var(--radius-badge)', flexShrink:0,
+                  }}>
                     AGENT
                   </span>
                 </Link>
