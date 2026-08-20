@@ -44,52 +44,44 @@ export default function StocksScreenerPage() {
 
   useEffect(() => {
     const loadData = async () => {
-      // Fetch asset metadata + stored prices
+      // Fetch asset metadata + DB prices (change_24h, market_cap — no live equivalent)
       const assetsRes = await fetch('/api/v1/assets?limit=100').then(r => r.json()).catch(() => null)
-      const assetList: ScreenerRow[] = (assetsRes?.data?.assets ?? []).map((a: {
+      type AssetRecord = {
         symbol: string
         name: string
-        prices?: { price: number; change_24h: number | null; volume_24h: number | null; market_cap: number | null }[]
-      }) => {
-        const p = a.prices?.[0]
+        prices?: { change_24h: number | null; market_cap: number | null }[]
+      }
+      const assetMeta = (assetsRes?.data?.assets ?? []) as AssetRecord[]
+
+      const symbols = assetMeta.length > 0
+        ? assetMeta.map(a => a.symbol)
+        : ['NVDA','HOOD','TSLA','META','AMD','AAPL','COIN','MSFT','GOOGL','AMZN']
+
+      // Fetch live price + volume for every symbol in one round-trip
+      const batchRes = await fetch(`/api/v1/prices/batch?symbols=${symbols.join(',')}`)
+        .then(r => r.json()).catch(() => null)
+      const livePrices: Record<string, { price: number; volume: number } | null> =
+        batchRes?.data?.prices ?? {}
+
+      const baseList = assetMeta.length > 0
+        ? assetMeta
+        : symbols.map(s => ({ symbol: s, name: s, prices: [] }))
+
+      const rows: ScreenerRow[] = baseList.map(a => {
+        const lp = livePrices[a.symbol]
+        const db = a.prices?.[0]
         return {
           symbol:    a.symbol,
           name:      a.name,
-          price:     p?.price ?? null,
-          change24h: p?.change_24h ?? null,
-          volume:    p?.volume_24h ?? null,
-          marketCap: p?.market_cap ?? null,
+          price:     lp?.price     ?? null,   // live
+          change24h: db?.change_24h ?? null,  // DB (no live equivalent in public API)
+          volume:    lp?.volume     ?? null,  // live
+          marketCap: db?.market_cap ?? null,  // DB
           posts:     0,
         }
       })
 
-      if (assetList.length === 0) {
-        // Fallback: fetch live prices for known symbols
-        const SYMBOLS = ['NVDA','HOOD','TSLA','META','AMD','AAPL','COIN','MSFT','GOOGL','AMZN']
-        const results = await Promise.allSettled(
-          SYMBOLS.map(s => fetch(`/api/v1/prices/${s}`).then(r => r.json()))
-        )
-        const live: ScreenerRow[] = results
-          .map((r, i) => {
-            if (r.status !== 'fulfilled') return null
-            const d = r.value?.data
-            if (!d) return null
-            return {
-              symbol:    SYMBOLS[i],
-              name:      SYMBOLS[i],
-              price:     d.price ?? null,
-              change24h: null,
-              volume:    d.volume ?? null,
-              marketCap: null,
-              posts:     0,
-            }
-          })
-          .filter(Boolean) as ScreenerRow[]
-        setRows(live)
-      } else {
-        setRows(assetList)
-      }
-
+      setRows(rows)
       setLoading(false)
     }
 

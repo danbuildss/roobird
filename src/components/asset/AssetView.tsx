@@ -691,10 +691,10 @@ export function AssetView({ symbol }: { symbol: string }) {
                 display:'flex', alignItems:'center', justifyContent:'space-between',
                 padding:'10px 14px', background:'var(--accent)',
                 borderRadius:8, textDecoration:'none',
-                fontSize:13, fontWeight:700, color:'#000',
+                fontSize:13, fontWeight:700, color:'var(--accent-text)',
                 transition:'opacity 120ms',
               }}
-                onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
+                onMouseEnter={e => (e.currentTarget.style.opacity = '0.88')}
                 onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
               >
                 <span>Trade {symbol} via Bankr</span>
