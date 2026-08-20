@@ -9,6 +9,7 @@ import {
   Code2,
   Search,
   Wallet,
+  LogOut,
   ChevronRight,
   PenLine,
   Menu,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react'
 import { LogoWordmark } from './LogoWordmark'
 import { useState, useEffect } from 'react'
+import { usePrivy } from '@privy-io/react-auth'
 
 const NAV_ITEMS = [
   { href: '/explore',    label: 'Explore',    Icon: Compass   },
@@ -27,6 +29,15 @@ const NAV_ITEMS = [
 export function AppNav() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const { ready, authenticated, user, login, logout } = usePrivy()
+
+  const displayName = user?.twitter?.username
+    ? `@${user.twitter.username}`
+    : user?.email?.address
+      ? user.email.address.split('@')[0]
+      : user?.wallet?.address
+        ? `${user.wallet.address.slice(0, 6)}…${user.wallet.address.slice(-4)}`
+        : null
 
   // Close drawer when navigating
   useEffect(() => { setMobileOpen(false) }, [pathname])
@@ -184,23 +195,66 @@ export function AppNav() {
 
       {/* Connect / profile */}
       <div style={{ padding: '8px 12px 20px' }}>
-        <Link
-          href="/auth/signin"
-          style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: '9px 12px',
-            background: 'var(--accent-dim)', border: '1px solid rgba(204,255,0,0.2)',
-            borderRadius: 8, textDecoration: 'none',
-            color: 'var(--accent)', fontSize: 13, fontWeight: 600,
-            transition: 'opacity 150ms',
-          }}
-          onMouseEnter={e => (e.currentTarget.style.opacity = '0.8')}
-          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
-        >
-          <Wallet size={15} strokeWidth={2} />
-          Connect
-          <ChevronRight size={13} strokeWidth={2} style={{ marginLeft: 'auto', color: 'var(--accent)' }} />
-        </Link>
+        {ready && authenticated && displayName ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{
+              padding: '8px 12px',
+              background: 'var(--surface-raised)',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              fontSize: 13,
+              color: 'var(--text-1)',
+              fontWeight: 500,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {displayName}
+            </div>
+            <button
+              onClick={() => logout()}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '7px 12px',
+                background: 'transparent', border: '1px solid var(--border)',
+                borderRadius: 8, cursor: 'pointer',
+                color: 'var(--text-3)', fontSize: 12,
+                transition: 'color 120ms, border-color 120ms',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.color = 'var(--text-1)'
+                e.currentTarget.style.borderColor = 'var(--text-3)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.color = 'var(--text-3)'
+                e.currentTarget.style.borderColor = 'var(--border)'
+              }}
+            >
+              <LogOut size={13} strokeWidth={1.5} />
+              Sign out
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => login()}
+            disabled={!ready}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              width: '100%', padding: '9px 12px',
+              background: 'var(--accent-dim)', border: '1px solid rgba(204,255,0,0.2)',
+              borderRadius: 8, cursor: ready ? 'pointer' : 'default',
+              color: 'var(--accent)', fontSize: 13, fontWeight: 600,
+              transition: 'opacity 150ms',
+              opacity: ready ? 1 : 0.5,
+            }}
+            onMouseEnter={e => { if (ready) e.currentTarget.style.opacity = '0.8' }}
+            onMouseLeave={e => { if (ready) e.currentTarget.style.opacity = '1' }}
+          >
+            <Wallet size={15} strokeWidth={2} />
+            Connect
+            <ChevronRight size={13} strokeWidth={2} style={{ marginLeft: 'auto', color: 'var(--accent)' }} />
+          </button>
+        )}
       </div>
     </>
   )

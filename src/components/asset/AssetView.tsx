@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { usePrivy } from '@privy-io/react-auth'
 import {
   Eye,
   ExternalLink,
@@ -276,53 +277,64 @@ function DiscussionControls({ sort, setSort, filter, setFilter }: {
 
 // ── Main view ─────────────────────────────────────────────────
 export function AssetView({ symbol }: { symbol: string }) {
+  const { ready: privyReady, authenticated, login, connectWallet, user } = usePrivy()
   const [livePrice, setLivePrice] = useState<LivePrice | null>(null)
   const [meta, setMeta]           = useState<AssetMeta | null>(null)
   const [theses, setTheses]       = useState<Thesis[]>([])
   const [agents, setAgents]       = useState<Agent[]>([])
   const [events, setEvents]       = useState<MarketEvent[]>([])
-  const [loading, setLoading]     = useState(true)
-  const [period, setPeriod]       = useState<Period>('1D')
-  const [tab, setTab]             = useState<AssetTab>('discussion')
-  const [watched, setWatched]     = useState(false)
-  const [sort, setSort]           = useState<SortKey>('hot')
-  const [filter, setFilter]       = useState<FilterKey>('all')
+  const [priceLoading, setPriceLoading] = useState(true)
+  const [loading, setLoading]           = useState(true)
+  const [period, setPeriod]             = useState<Period>('1D')
+  const [tab, setTab]                   = useState<AssetTab>('discussion')
+  const [watched, setWatched]           = useState(false)
+  const [sort, setSort]                 = useState<SortKey>('hot')
+  const [filter, setFilter]             = useState<FilterKey>('all')
+
+  const hasWallet = !!user?.wallet?.address
+
+  const handleTradeViaBankr = useCallback(async () => {
+    if (!authenticated) {
+      login()
+      return
+    }
+    if (!hasWallet) {
+      await connectWallet()
+      return
+    }
+    window.open('https://bankr.bot', '_blank', 'noopener,noreferrer')
+  }, [authenticated, hasWallet, login, connectWallet])
 
   useEffect(() => {
+    setPriceLoading(true)
     setLoading(true)
 
-    const fetchAll = async () => {
-      const [priceRes, assetsRes, thesesRes, agentsRes, eventsRes] = await Promise.allSettled([
+    // Price + meta arrive fast — unblock the header immediately
+    const fetchCore = async () => {
+      const [priceRes, metaRes] = await Promise.allSettled([
         fetch(`/api/v1/prices/${symbol}`).then(r => r.json()),
-        fetch('/api/v1/assets').then(r => r.json()),
+        fetch(`/api/v1/assets/${symbol}`).then(r => r.json()),
+      ])
+      if (priceRes.status === 'fulfilled') setLivePrice(priceRes.value.data ?? null)
+      if (metaRes.status === 'fulfilled')  setMeta(metaRes.value.data ?? null)
+      setPriceLoading(false)
+    }
+
+    // Discussion data fetched separately — doesn't block the price header
+    const fetchContent = async () => {
+      const [thesesRes, agentsRes, eventsRes] = await Promise.allSettled([
         fetch(`/api/v1/theses?symbol=${symbol}&limit=20`).then(r => r.json()),
         fetch('/api/v1/agents?limit=3').then(r => r.json()),
         fetch(`/api/v1/events?symbol=${symbol}&limit=5`).then(r => r.json()),
       ])
-
-      if (priceRes.status === 'fulfilled') {
-        setLivePrice(priceRes.value.data ?? null)
-      }
-      if (assetsRes.status === 'fulfilled') {
-        const match = (assetsRes.value.data?.assets ?? []).find(
-          (a: { symbol: string }) => a.symbol === symbol
-        )
-        setMeta(match ?? null)
-      }
-      if (thesesRes.status === 'fulfilled') {
-        setTheses(thesesRes.value.data?.theses ?? [])
-      }
-      if (agentsRes.status === 'fulfilled') {
-        setAgents(agentsRes.value.data?.agents ?? [])
-      }
-      if (eventsRes.status === 'fulfilled') {
-        setEvents(eventsRes.value.data?.events ?? [])
-      }
-
+      if (thesesRes.status === 'fulfilled') setTheses(thesesRes.value.data?.theses ?? [])
+      if (agentsRes.status === 'fulfilled') setAgents(agentsRes.value.data?.agents ?? [])
+      if (eventsRes.status === 'fulfilled') setEvents(eventsRes.value.data?.events ?? [])
       setLoading(false)
     }
 
-    fetchAll()
+    fetchCore()
+    fetchContent()
   }, [symbol])
 
   const price = livePrice?.price ?? 0
@@ -356,7 +368,7 @@ export function AssetView({ symbol }: { symbol: string }) {
                 <h1 style={{ fontSize:22, fontWeight:700, letterSpacing:'-0.03em', color:'var(--text-1)' }}>
                   {symbol}
                 </h1>
-                {!loading && (
+                {!priceLoading && (
                   <span style={{ fontSize:14, color:'var(--text-2)' }}>{assetName}</span>
                 )}
                 <span style={{
@@ -368,7 +380,7 @@ export function AssetView({ symbol }: { symbol: string }) {
                 </span>
               </div>
 
-              {loading ? (
+              {priceLoading ? (
                 <div style={{ width:200, height:40, background:'var(--surface-raised)', borderRadius:6, animation:'pulse 1.5s ease-in-out infinite' }} />
               ) : (
                 <div style={{ display:'flex', alignItems:'baseline', gap:10 }}>
@@ -441,7 +453,7 @@ export function AssetView({ symbol }: { symbol: string }) {
               <div key={stat.label} style={{ background:'var(--bg)', padding:'10px 24px' }}>
                 <p style={{ fontSize:10, color:'var(--text-3)', fontWeight:500, letterSpacing:'0.04em', textTransform:'uppercase', marginBottom:4 }}>{stat.label}</p>
                 <p style={{ fontSize:13, fontWeight:600, color:'var(--text-1)', fontVariantNumeric:'tabular-nums' }}>
-                  {loading ? <span style={{ display:'inline-block', width:60, height:14, background:'var(--surface-raised)', borderRadius:4 }} /> : stat.value}
+                  {priceLoading ? <span style={{ display:'inline-block', width:60, height:14, background:'var(--surface-raised)', borderRadius:4 }} /> : stat.value}
                 </p>
               </div>
             ))}
@@ -687,19 +699,29 @@ export function AssetView({ symbol }: { symbol: string }) {
           <div>
             <p style={{ fontSize:11, fontWeight:600, color:'var(--text-3)', letterSpacing:'0.06em', textTransform:'uppercase', marginBottom:12 }}>Trade</p>
             <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-card)', padding:'14px' }}>
-              <Link href="https://bankr.bot" target="_blank" rel="noopener noreferrer" style={{
-                display:'flex', alignItems:'center', justifyContent:'space-between',
-                padding:'10px 14px', background:'var(--accent)',
-                borderRadius:8, textDecoration:'none',
-                fontSize:13, fontWeight:700, color:'var(--accent-text)',
-                transition:'opacity 120ms',
-              }}
-                onMouseEnter={e => (e.currentTarget.style.opacity = '0.88')}
-                onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+              <button
+                onClick={handleTradeViaBankr}
+                disabled={!privyReady}
+                style={{
+                  display:'flex', alignItems:'center', justifyContent:'space-between',
+                  width:'100%', padding:'10px 14px', background:'var(--accent)',
+                  borderRadius:8, border:'none', cursor: privyReady ? 'pointer' : 'default',
+                  fontSize:13, fontWeight:700, color:'var(--accent-text)',
+                  transition:'opacity 120ms',
+                  opacity: privyReady ? 1 : 0.7,
+                }}
+                onMouseEnter={e => { if (privyReady) e.currentTarget.style.opacity = '0.88' }}
+                onMouseLeave={e => { if (privyReady) e.currentTarget.style.opacity = '1' }}
+                onMouseDown={e => { if (privyReady) e.currentTarget.style.transform = 'scale(0.97)' }}
+                onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
               >
-                <span>Trade {symbol} via Bankr</span>
+                <span>
+                  {!authenticated ? `Sign in to trade ${symbol}` :
+                   !hasWallet    ? `Connect wallet to trade ${symbol}` :
+                   `Trade ${symbol} via Bankr`}
+                </span>
                 <ArrowUpRight size={14} strokeWidth={2} />
-              </Link>
+              </button>
               <p style={{ fontSize:11, color:'var(--text-3)', marginTop:10, lineHeight:1.6 }}>
                 Available outside US/UK. Execution provided by Bankr. Verification required.
               </p>
@@ -708,10 +730,10 @@ export function AssetView({ symbol }: { symbol: string }) {
         )}
 
         {/* About */}
-        {(meta || loading) && (
+        {(meta || priceLoading) && (
           <div>
             <p style={{ fontSize:11, fontWeight:600, color:'var(--text-3)', letterSpacing:'0.06em', textTransform:'uppercase', marginBottom:12 }}>About</p>
-            {loading ? (
+            {priceLoading ? (
               <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
                 {[100,80,90,70].map((w,i) => (
                   <div key={i} style={{ width:`${w}%`, height:12, background:'var(--surface-raised)', borderRadius:3, animation:'pulse 1.5s ease-in-out infinite' }} />
