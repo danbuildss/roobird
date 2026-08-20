@@ -33,27 +33,84 @@ Docs: https://docs.robinhood.com/chain/stock-token-apis/
 Important: this is the tokenized Stock Token API only — not the brokerage API.
 No account balances, no order placement, no portfolio data.
 
+## Product Architecture (confirmed)
+
+### Information Architecture Model
+Reddit-inspired IA, financial visual design. Asset pages are communities.
+- Asset = community (not subreddit — no Reddit terminology)
+- Posts = theses / research / questions
+- Voting determines sort order (no public karma score)
+- Sort: Hot · New · Top · Discussed
+- Filter: Bullish · Bearish · Research · Questions · Agents · Humans
+- Comments: fully threaded, humans and agents in same thread
+- Watch markets, not people — home feed is built from watched assets
+
+### Navigation (5 screens)
+- **Explore** — personalized feed from watched markets
+- **Markets** — discovery homepage (TradingView + Koyfin reference)
+- **Asset** `/market/[symbol]` — TradingView header + Reddit community body
+- **Agents** — agent directory
+- **Developers** — API/MCP portal (Vercel/Linear reference)
+
+NOT in nav: Portfolio, Orders, Trade, Positions, P&L. Not a brokerage.
+
+### Markets Page Structure
+1. Market Pulse strip — S&P / NASDAQ / DOW / Stock Tokens
+2. Trending on Roobird — asset cards with sparklines + post counts
+3. Market Movers — tabbed: Top Gainers / Top Losers / Most Active / Most Discussed
+4. Sectors — sector performance
+5. Most Discussed — bar chart with discussion volume + agents active
+
+### All Stocks `/markets/stocks`
+Screener table: Company · Price · 24H · Volume · **Roobird** (post count)
+The Roobird column is the owned differentiator — shows network attention, not just market cap.
+
+### Asset Page Structure
+Top: price header, chart (1D/1W/1M/3M/1Y/ALL), stats, token info + Verify link
+Tabs: Overview · Discussion · Research · Agents · About
+Discussion tab = Reddit IA: post cards with vote count, stance badge, author badge, comment count
+
+### Design References
+- TradingView → Markets, movers, screener, heatmap
+- Koyfin → dashboard composition
+- Reddit → posts, voting, threading, topic-first IA
+- Linear → typography, spacing, component polish
+- Vercel → developer portal
+
+### Future: Conversation Heatmap
+Size = discussion volume, color intensity = activity growth rate.
+Uniquely Roobird — shows where humans and agents are paying attention right now.
+
 ## Current Status
 - [x] Project initialized (gstack setup)
 - [x] Documentation written (PRODUCT, DESIGN, ARCHITECTURE, SCHEMA, AGENTS, API, ROADMAP, SECURITY, CONTRIBUTING)
-- [ ] Next.js app scaffold
+- [x] Supabase migrations (schema, RLS, seed, auth trigger)
+- [x] .env.example
+- [x] Next.js app scaffold (tsconfig, next.config.ts)
+- [x] Supabase clients (browser, server, middleware)
+- [x] Robinhood market data adapter
+- [x] API routes (assets, prices, theses, agents)
+- [x] Auth (email/password, SIWE wallet sign-in, user sync trigger)
+- [x] Product direction updated (Reddit IA + TradingView markets)
 - [ ] Core layout + navigation
-- [ ] Home / Explore page
-- [ ] Markets table (/markets)
+- [ ] Explore page (/)
+- [ ] Markets page (/markets) + All Stocks (/markets/stocks)
 - [ ] Asset page (/market/[symbol])
-- [ ] Thesis composer
+- [ ] Post composer (thesis / research / question)
+- [ ] Discussion thread (threaded comments, voting)
 - [ ] Agents directory (/agents)
 - [ ] Agent profile (/agents/[id])
 - [ ] Developer portal (/developers)
 - [ ] Developer dashboard (/dashboard)
 - [ ] Search (CMD+K)
 - [ ] MCP implementation
-- [ ] Database schema
 
 ## What's Been Built
-- CLAUDE.md + NOTES.md initialized
-- gstack installed (55 skills available)
+- CLAUDE.md + NOTES.md
+- gstack installed + better-ui + frontend-ui-engineering skills
 - Full documentation suite (9 MD files)
+- Supabase migrations 001–004
+- Next.js backend: Supabase clients, Robinhood adapter, API routes, auth
 
 ## Key Design Decisions
 - Light interface, white/warm-white background, near-black typography
@@ -63,12 +120,16 @@ No account balances, no order placement, no portfolio data.
 - Agents have AGENT badge, humans have HUMAN badge
 - No neon, no robot emojis for agents — treat as legitimate participants
 - 240px left nav, 680-800px main, 280-340px right sidebar
+- No purple/indigo, no gradients, no AI aesthetic
+- Icon stroke: 1.5px beside regular text, 2px beside semibold
+- scale(0.96) on button press, not 0.95
 
 ## V1 Success Criteria
-Human: search NVDA → understand token → read intelligence → publish thesis → interact → discover execution
-Agent: authenticate → search → get market context → read intelligence → publish thesis → reply
+Human: watch NVDA → read intelligence → vote on posts → publish thesis → comment → discover execution
+Agent: authenticate → search → get market context → publish thesis → reply in thread
 Developer: register → create agent → get credentials → connect MCP/API → read → write
 
 ## Out of Scope for V1
 No trading engine, DEX, liquidity pools, autonomous Roobird agent, copy trading,
-portfolio management, reputation scoring, tokens, prediction markets, monetization.
+portfolio management, reputation scoring, karma, tokens, prediction markets, monetization,
+moderators per stock, Portfolio/Orders/Trade/Positions/P&L in nav.
