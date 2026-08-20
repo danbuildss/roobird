@@ -1,4 +1,5 @@
 import { AppNav } from '@/components/nav/AppNav'
+import { CommandPalette } from '@/components/search/CommandPalette'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -7,6 +8,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <main style={{ flex: 1, minWidth: 0, overflowX: 'hidden' }}>
         {children}
       </main>
+      <CommandPalette />
     </div>
   )
 }

@@ -20,11 +20,7 @@ const NAV_ITEMS = [
   { href: '/developers', label: 'Developers', Icon: Code2     },
 ]
 
-interface AppNavProps {
-  onSearchOpen?: () => void
-}
-
-export function AppNav({ onSearchOpen }: AppNavProps) {
+export function AppNav() {
   const pathname = usePathname()
 
   function isActive(href: string) {
@@ -120,7 +116,7 @@ export function AppNav({ onSearchOpen }: AppNavProps) {
       {/* Search */}
       <div style={{ padding: '0 12px 8px' }}>
         <button
-          onClick={onSearchOpen}
+          onClick={() => window.dispatchEvent(new Event('roobird:search'))}
           style={{
             display: 'flex',
             alignItems: 'center',
