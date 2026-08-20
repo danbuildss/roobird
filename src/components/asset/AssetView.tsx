@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { usePrivy } from '@privy-io/react-auth'
 import {
   Eye,
   ExternalLink,
@@ -276,6 +277,7 @@ function DiscussionControls({ sort, setSort, filter, setFilter }: {
 
 // ── Main view ─────────────────────────────────────────────────
 export function AssetView({ symbol }: { symbol: string }) {
+  const { ready: privyReady, authenticated, login, connectWallet, user } = usePrivy()
   const [livePrice, setLivePrice] = useState<LivePrice | null>(null)
   const [meta, setMeta]           = useState<AssetMeta | null>(null)
   const [theses, setTheses]       = useState<Thesis[]>([])
@@ -288,6 +290,20 @@ export function AssetView({ symbol }: { symbol: string }) {
   const [watched, setWatched]           = useState(false)
   const [sort, setSort]                 = useState<SortKey>('hot')
   const [filter, setFilter]             = useState<FilterKey>('all')
+
+  const hasWallet = !!user?.wallet?.address
+
+  const handleTradeViaBankr = useCallback(async () => {
+    if (!authenticated) {
+      login()
+      return
+    }
+    if (!hasWallet) {
+      await connectWallet()
+      return
+    }
+    window.open('https://bankr.bot', '_blank', 'noopener,noreferrer')
+  }, [authenticated, hasWallet, login, connectWallet])
 
   useEffect(() => {
     setPriceLoading(true)
@@ -683,19 +699,29 @@ export function AssetView({ symbol }: { symbol: string }) {
           <div>
             <p style={{ fontSize:11, fontWeight:600, color:'var(--text-3)', letterSpacing:'0.06em', textTransform:'uppercase', marginBottom:12 }}>Trade</p>
             <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-card)', padding:'14px' }}>
-              <Link href="https://bankr.bot" target="_blank" rel="noopener noreferrer" style={{
-                display:'flex', alignItems:'center', justifyContent:'space-between',
-                padding:'10px 14px', background:'var(--accent)',
-                borderRadius:8, textDecoration:'none',
-                fontSize:13, fontWeight:700, color:'var(--accent-text)',
-                transition:'opacity 120ms',
-              }}
-                onMouseEnter={e => (e.currentTarget.style.opacity = '0.88')}
-                onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+              <button
+                onClick={handleTradeViaBankr}
+                disabled={!privyReady}
+                style={{
+                  display:'flex', alignItems:'center', justifyContent:'space-between',
+                  width:'100%', padding:'10px 14px', background:'var(--accent)',
+                  borderRadius:8, border:'none', cursor: privyReady ? 'pointer' : 'default',
+                  fontSize:13, fontWeight:700, color:'var(--accent-text)',
+                  transition:'opacity 120ms',
+                  opacity: privyReady ? 1 : 0.7,
+                }}
+                onMouseEnter={e => { if (privyReady) e.currentTarget.style.opacity = '0.88' }}
+                onMouseLeave={e => { if (privyReady) e.currentTarget.style.opacity = '1' }}
+                onMouseDown={e => { if (privyReady) e.currentTarget.style.transform = 'scale(0.97)' }}
+                onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
               >
-                <span>Trade {symbol} via Bankr</span>
+                <span>
+                  {!authenticated ? `Sign in to trade ${symbol}` :
+                   !hasWallet    ? `Connect wallet to trade ${symbol}` :
+                   `Trade ${symbol} via Bankr`}
+                </span>
                 <ArrowUpRight size={14} strokeWidth={2} />
-              </Link>
+              </button>
               <p style={{ fontSize:11, color:'var(--text-3)', marginTop:10, lineHeight:1.6 }}>
                 Available outside US/UK. Execution provided by Bankr. Verification required.
               </p>
