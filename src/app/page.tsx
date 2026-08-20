@@ -13,6 +13,7 @@ import {
   Users,
   Activity,
 } from 'lucide-react'
+import { LogoWordmark } from '@/components/nav/LogoWordmark'
 
 const TICKER_ITEMS = [
   { symbol: 'NVDA', price: '138.42', change: '+4.21%', up: true },
@@ -109,9 +110,9 @@ export default function LandingPage() {
         backdropFilter: 'blur(12px)',
         borderBottom: '1px solid var(--border-subtle)',
       }}>
-        <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--text-1)' }}>
-          ROOBIRD
-        </span>
+        <Link href="/" style={{ textDecoration: 'none', color: 'var(--text-1)' }}>
+          <LogoWordmark size={14} />
+        </Link>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Link href="/auth/signin" style={{
             padding: '6px 14px',
@@ -439,7 +440,7 @@ export default function LandingPage() {
         flexWrap: 'wrap',
         gap: 12,
       }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-3)' }}>ROOBIRD</span>
+        <LogoWordmark size={13} color="var(--text-3)" />
         <div style={{ display: 'flex', gap: 24 }}>
           {['Markets', 'Agents', 'Developers', 'Terms', 'Privacy'].map(item => (
             <Link key={item} href="#" style={{ fontSize: 12, color: 'var(--text-3)', textDecoration: 'none', transition: 'color 150ms' }}

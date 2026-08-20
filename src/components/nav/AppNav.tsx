@@ -11,6 +11,7 @@ import {
   Wallet,
   ChevronRight,
 } from 'lucide-react'
+import { LogoWordmark } from './LogoWordmark'
 
 const NAV_ITEMS = [
   { href: '/explore',    label: 'Explore',    Icon: Compass   },
@@ -47,37 +48,9 @@ export function AppNav({ onSearchOpen }: AppNavProps) {
       }}
     >
       {/* Logo */}
-      <div style={{ padding: '20px 20px 8px' }}>
-        <Link
-          href="/explore"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            textDecoration: 'none',
-          }}
-        >
-          <div style={{
-            width: 28,
-            height: 28,
-            background: 'var(--accent)',
-            borderRadius: 8,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--accent-text)" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 3C7.03 3 3 7.03 3 12s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9zm0 2c3.86 0 7 3.14 7 7s-3.14 7-7 7-7-3.14-7-7 3.14-7 7-7zm0 2a5 5 0 1 0 0 10A5 5 0 0 0 12 7zm0 2a3 3 0 1 1 0 6 3 3 0 0 1 0-6z"/>
-            </svg>
-          </div>
-          <span style={{
-            fontSize: 14,
-            fontWeight: 700,
-            letterSpacing: '-0.02em',
-            color: 'var(--text-1)',
-          }}>
-            ROOBIRD
-          </span>
+      <div style={{ padding: '22px 20px 8px' }}>
+        <Link href="/explore" style={{ textDecoration: 'none', color: 'var(--text-1)' }}>
+          <LogoWordmark size={15} />
         </Link>
       </div>
 
