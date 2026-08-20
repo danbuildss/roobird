@@ -682,8 +682,8 @@ export function AssetView({ symbol }: { symbol: string }) {
           )}
         </div>
 
-        {/* Trade CTA */}
-        {['NVDA', 'AAPL', 'TSLA'].includes(symbol) ? (
+        {/* Bankr execution CTA — stocks only */}
+        {(['NVDA', 'AAPL', 'TSLA'] as const).includes(symbol as 'NVDA' | 'AAPL' | 'TSLA') && (
           <div>
             <p style={{ fontSize:11, fontWeight:600, color:'var(--text-3)', letterSpacing:'0.06em', textTransform:'uppercase', marginBottom:12 }}>Trade</p>
             <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-card)', padding:'14px' }}>
@@ -697,15 +697,15 @@ export function AssetView({ symbol }: { symbol: string }) {
                 onMouseEnter={e => (e.currentTarget.style.opacity = '0.88')}
                 onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
               >
-                <span>Buy {symbol} on Bankr</span>
+                <span>Trade {symbol} via Bankr</span>
                 <ArrowUpRight size={14} strokeWidth={2} />
               </Link>
-              <p style={{ fontSize:11, color:'var(--text-3)', marginTop:10, lineHeight:1.55 }}>
+              <p style={{ fontSize:11, color:'var(--text-3)', marginTop:10, lineHeight:1.6 }}>
                 Available outside US/UK. Execution provided by Bankr. Verification required.
               </p>
             </div>
           </div>
-        ) : null}
+        )}
 
         {/* About */}
         {(meta || loading) && (
