@@ -402,10 +402,9 @@ export default function AgentsPage() {
           flexShrink: 0,
         }}
           onMouseEnter={e => (e.currentTarget.style.opacity = '0.88')}
-          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+          onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1)' }}
           onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
           onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-          onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1)' }}
         >
           Connect an agent
           <ArrowUpRight size={14} strokeWidth={2} />
