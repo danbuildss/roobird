@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import {
   ArrowUpRight,
@@ -14,11 +14,19 @@ import {
   Code2,
   TrendingUp,
   Plus,
-  Loader2,
+  Zap,
+  Radio,
 } from 'lucide-react'
 
 type SortKey  = 'hot' | 'new' | 'top' | 'discussed'
 type Stance   = 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'RESEARCH' | 'QUESTION'
+
+interface PriceData {
+  price: number
+  change_24h: number | null
+  bid?: number
+  ask?: number
+}
 
 interface FeedPost {
   id: string
@@ -32,18 +40,18 @@ interface FeedPost {
   comments: number
 }
 
-interface WatchedAsset {
+interface PulseItem {
   symbol: string
-  price: string
-  change: string
-  up: boolean
-  pts: number[]
+  sentiment: 'Bullish' | 'Neutral' | 'Bearish'
+  sentiment_score: number
+  summary: string
+  themes: string[]
+  updated_at: string
 }
 
 interface LiveAgent {
   name: string
   desc: string
-  active: string
 }
 
 function timeAgo(iso: string): string {
@@ -63,9 +71,22 @@ const STANCE_COLOR: Record<Stance, string> = {
   QUESTION: '#f59e0b',
 }
 
-const WATCHED_SYMBOLS = ['NVDA', 'HOOD', 'TSLA', 'META', 'AAPL', 'COIN']
+const SENTIMENT_COLOR: Record<PulseItem['sentiment'], string> = {
+  Bullish: '#4ade80',
+  Bearish: '#f87171',
+  Neutral: '#94918d',
+}
 
-// Deterministic sparkline points that go up or down
+// Fallback watchlist when user has no bookmarks
+const DEFAULT_WATCH = ['NVDA', 'HOOD', 'TSLA', 'META', 'AAPL', 'COIN']
+
+// Full pool for Moving Now and price fetching
+const PULSE_SYMBOLS = [
+  'AAPL', 'NVDA', 'TSLA', 'MSFT', 'AMZN', 'GOOGL', 'META',
+  'HOOD', 'COIN', 'AMD', 'INTC', 'NFLX', 'DIS', 'PYPL',
+  'PLTR', 'RBLX', 'SNAP', 'UBER', 'LYFT', 'SQ',
+]
+
 function makePts(up: boolean): number[] {
   if (up) return [6, 8, 7, 10, 9, 13, 15, 14, 16, 18, 17, 20]
   return [20, 17, 18, 15, 14, 13, 12, 10, 9, 8, 7, 6]
@@ -186,19 +207,68 @@ export default function ExplorePage() {
   const [sort, setSort] = useState<SortKey>('hot')
   const SORTS: SortKey[] = ['hot', 'new', 'top', 'discussed']
 
-  const [watched, setWatched]     = useState<WatchedAsset[]>([])
-  const [liveAgents, setLiveAgents] = useState<LiveAgent[]>([])
+  const [priceMap, setPriceMap]           = useState<Record<string, PriceData>>({})
   const [pricesLoading, setPricesLoading] = useState(true)
-  const [feed, setFeed]           = useState<FeedPost[]>([])
-  const [feedLoading, setFeedLoading] = useState(true)
+  const [watchedSymbols, setWatchedSymbols] = useState<string[]>(DEFAULT_WATCH)
+  const [pulseList, setPulseList]         = useState<PulseItem[]>([])
+  const [pulseLoading, setPulseLoading]   = useState(true)
+  const [liveAgents, setLiveAgents]       = useState<LiveAgent[]>([])
+  const [feed, setFeed]                   = useState<FeedPost[]>([])
+  const [feedLoading, setFeedLoading]     = useState(true)
 
-  // Fetch real theses feed
+  // Fetch prices for all PULSE_SYMBOLS in parallel
   useEffect(() => {
-    const order = sort === 'new' ? 'created_at' : 'created_at'
+    Promise.allSettled(
+      PULSE_SYMBOLS.map(sym =>
+        fetch(`/api/v1/prices/${sym}`)
+          .then(async r => {
+            if (!r.ok) return null
+            const j = await r.json()
+            return j.data ? { sym, data: j.data as PriceData } : null
+          })
+          .catch(() => null)
+      )
+    ).then(results => {
+      const map: Record<string, PriceData> = {}
+      results.forEach(r => {
+        if (r.status === 'fulfilled' && r.value) {
+          map[r.value.sym] = r.value.data
+        }
+      })
+      setPriceMap(map)
+      setPricesLoading(false)
+    })
+  }, [])
+
+  // Fetch bookmarked assets (list mode) — override default watchlist if user has bookmarks
+  useEffect(() => {
+    fetch('/api/v1/bookmarks?target_type=asset')
+      .then(r => r.json())
+      .then(data => {
+        const assets: { symbol: string }[] = data.data?.assets ?? []
+        if (assets.length > 0) {
+          setWatchedSymbols(assets.map(a => a.symbol))
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  // Fetch pulse list (Market Pulse Discovery)
+  useEffect(() => {
+    fetch('/api/v1/pulse?limit=6')
+      .then(r => r.json())
+      .then(data => setPulseList(data.data ?? []))
+      .catch(() => setPulseList([]))
+      .finally(() => setPulseLoading(false))
+  }, [])
+
+  // Fetch theses feed (Discussions)
+  useEffect(() => {
     fetch(`/api/v1/theses?limit=20`)
       .then(r => r.json())
       .then(data => {
-        const posts: FeedPost[] = (data.theses ?? []).map((t: {
+        const theses = data.data?.theses ?? []
+        const posts: FeedPost[] = theses.map((t: {
           id: string
           stance: string
           title: string
@@ -223,98 +293,130 @@ export default function ExplorePage() {
       .finally(() => setFeedLoading(false))
   }, [sort])
 
-  // Fetch real asset prices
-  useEffect(() => {
-    Promise.all(
-      WATCHED_SYMBOLS.map(sym =>
-        fetch(`/api/v1/prices/${sym}`)
-          .then(async r => { if (!r.ok) return null; const j = await r.json(); return j.data ?? null })
-          .catch(() => null)
-      )
-    ).then(results => {
-      const assets: WatchedAsset[] = []
-      results.forEach((data, i) => {
-        const sym = WATCHED_SYMBOLS[i]
-        if (data && data.price != null) {
-          const up = (data.change_24h ?? 0) >= 0
-          assets.push({
-            symbol: sym,
-            price: Number(data.price).toFixed(2),
-            change: data.change_24h != null
-              ? `${data.change_24h >= 0 ? '+' : ''}${Number(data.change_24h).toFixed(2)}%`
-              : '—',
-            up,
-            pts: makePts(up),
-          })
-        }
-        // Only include symbols that have actual price data
-      })
-      setWatched(assets)
-      setPricesLoading(false)
-    })
-  }, [])
-
-  // Fetch real agents from Supabase
+  // Fetch agents for sidebar
   useEffect(() => {
     fetch('/api/v1/agents?limit=4')
       .then(r => r.json())
       .then(data => {
-        const agents = (data.agents ?? []).map((a: { name: string; description: string; created_at: string }) => ({
+        const agents = (data.data?.agents ?? []).map((a: { name: string; description: string }) => ({
           name: a.name,
           desc: a.description?.slice(0, 40) + (a.description?.length > 40 ? '…' : ''),
-          active: 'Recently active',
         }))
         setLiveAgents(agents)
       })
       .catch(() => setLiveAgents([]))
   }, [])
 
+  // Derive top movers (Moving Now) — sorted by abs(change_24h)
+  const movers = useMemo(() => {
+    return Object.entries(priceMap)
+      .filter(([, d]) => d.change_24h != null)
+      .sort((a, b) => Math.abs(b[1].change_24h!) - Math.abs(a[1].change_24h!))
+      .slice(0, 4)
+      .map(([symbol, d]) => ({ symbol, ...d }))
+  }, [priceMap])
+
+  // Derive watched assets with price data
+  const watched = useMemo(() => {
+    return watchedSymbols
+      .filter(sym => priceMap[sym])
+      .map(sym => {
+        const d = priceMap[sym]
+        const up = (d.change_24h ?? 0) >= 0
+        return {
+          symbol: sym,
+          price: Number(d.price).toFixed(2),
+          change: d.change_24h != null
+            ? `${d.change_24h >= 0 ? '+' : ''}${Number(d.change_24h).toFixed(2)}%`
+            : '—',
+          up,
+          pts: makePts(up),
+        }
+      })
+  }, [watchedSymbols, priceMap])
+
+  const liveCount = Object.keys(priceMap).length
+
   return (
     <div style={{ display:'flex', minHeight:'100vh', flexDirection:'column' }}>
-
       <div style={{ display:'flex', flex:1, minHeight:0 }}>
-        {/* ── Main ── */}
+
+        {/* ── Main column ── */}
         <div style={{ flex:1, minWidth:0, borderRight:'1px solid var(--border)' }}>
 
-          {/* Market Pulse strip */}
+          {/* Moving Now strip */}
           <div style={{
             display:'flex', alignItems:'stretch', overflowX:'auto',
             borderBottom:'1px solid var(--border)',
             background:'var(--surface)',
           }}>
-            {[
-              { label: 'S&P 500',      value: '5,912.34', change: '+0.84%', up: true  },
-              { label: 'NASDAQ',       value: '19,340',   change: '+1.12%', up: true  },
-              { label: 'DOW',          value: '42,108',   change: '+0.43%', up: true  },
-              { label: 'Stock Tokens', value: '12 live',  change: null,     up: null  },
-            ].map((item, i, arr) => (
-              <div key={i} style={{
-                flex:1, padding:'12px 16px', minWidth:100,
-                borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none',
-                flexShrink: 0,
-              }}>
-                <p style={{ fontSize:10, color:'var(--text-3)', fontWeight:500, letterSpacing:'0.04em', textTransform:'uppercase', marginBottom:4 }}>
-                  {item.label}
-                </p>
-                <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
-                  <span style={{ fontSize:13, fontWeight:600, color:'var(--text-1)', fontVariantNumeric:'tabular-nums' }}>
-                    {item.value}
-                  </span>
-                  {item.change !== null && item.up !== null && (
-                    <span style={{ fontSize:11, color: item.up ? 'var(--up)' : 'var(--down)', display:'inline-flex', alignItems:'center', gap:2, fontVariantNumeric:'tabular-nums' }}>
-                      {item.up ? <ArrowUpRight size={11} strokeWidth={2} /> : <ArrowDownRight size={11} strokeWidth={2} />}
-                      {item.change}
-                    </span>
-                  )}
-                  {item.change === null && (
-                    <span style={{ fontSize:11, color:'var(--accent)', fontWeight:600 }}>Live</span>
-                  )}
-                </div>
+            {/* Stock Tokens count cell */}
+            <div style={{
+              flex:1, padding:'12px 16px', minWidth:110,
+              borderRight:'1px solid var(--border)', flexShrink:0,
+            }}>
+              <p style={{ fontSize:10, color:'var(--text-3)', fontWeight:500, letterSpacing:'0.04em', textTransform:'uppercase', marginBottom:4 }}>
+                Stock Tokens
+              </p>
+              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <span style={{ fontSize:13, fontWeight:600, color:'var(--text-1)', fontVariantNumeric:'tabular-nums' }}>
+                  {pricesLoading ? '—' : `${liveCount} live`}
+                </span>
+                {!pricesLoading && liveCount > 0 && (
+                  <span style={{ fontSize:10, color:'var(--accent)', fontWeight:700 }}>●</span>
+                )}
               </div>
-            ))}
+            </div>
+
+            {/* Moving Now: top movers */}
+            {pricesLoading ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} style={{
+                  flex:1, padding:'12px 16px', minWidth:100,
+                  borderRight:'1px solid var(--border)', flexShrink:0,
+                }}>
+                  <div style={{ height:10, width:40, background:'var(--surface-raised)', borderRadius:3, marginBottom:6, animation:'pulse 1.5s ease-in-out infinite' }} />
+                  <div style={{ height:14, width:60, background:'var(--surface-raised)', borderRadius:3, animation:'pulse 1.5s ease-in-out infinite' }} />
+                </div>
+              ))
+            ) : movers.map((m, i, arr) => {
+              const up = (m.change_24h ?? 0) >= 0
+              return (
+                <Link key={m.symbol} href={`/market/${m.symbol}`} style={{ textDecoration:'none', flex:1, flexShrink:0 }}>
+                  <div style={{
+                    padding:'12px 16px', minWidth:100, height:'100%',
+                    borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none',
+                    cursor:'pointer', transition:'background 120ms',
+                  }}
+                    onMouseEnter={e => ((e.currentTarget as HTMLDivElement).style.background = 'var(--surface-raised)')}
+                    onMouseLeave={e => ((e.currentTarget as HTMLDivElement).style.background = 'transparent')}
+                  >
+                    <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:4 }}>
+                      <p style={{ fontSize:10, color:'var(--text-3)', fontWeight:500, letterSpacing:'0.04em', textTransform:'uppercase' }}>
+                        {m.symbol}
+                      </p>
+                      <span style={{ fontSize:9, color:'var(--text-3)', opacity:0.5 }}>
+                        <Zap size={9} strokeWidth={2} style={{ color: up ? 'var(--up)' : 'var(--down)' }} />
+                      </span>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:5, flexWrap:'wrap' }}>
+                      <span style={{ fontSize:13, fontWeight:600, color:'var(--text-1)', fontVariantNumeric:'tabular-nums' }}>
+                        ${Number(m.price).toFixed(2)}
+                      </span>
+                      {m.change_24h != null && (
+                        <span style={{ fontSize:11, color: up ? 'var(--up)' : 'var(--down)', display:'inline-flex', alignItems:'center', gap:2, fontVariantNumeric:'tabular-nums' }}>
+                          {up ? <ArrowUpRight size={11} strokeWidth={2} /> : <ArrowDownRight size={11} strokeWidth={2} />}
+                          {Math.abs(m.change_24h).toFixed(2)}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              )
+            })}
           </div>
 
-          {/* Watching strip */}
+          {/* Watching */}
           <div style={{ padding:'16px 20px 0', borderBottom:'1px solid var(--border)' }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
               <p style={{ fontSize:11, fontWeight:600, color:'var(--text-3)', letterSpacing:'0.06em', textTransform:'uppercase' }}>
@@ -340,6 +442,10 @@ export default function ExplorePage() {
                     animation:'pulse 1.5s ease-in-out infinite',
                   }} />
                 ))
+              ) : watched.length === 0 ? (
+                <p style={{ fontSize:13, color:'var(--text-3)', paddingBottom:14 }}>
+                  No watchlist yet — bookmark assets to see them here.
+                </p>
               ) : watched.map(asset => (
                 <Link key={asset.symbol} href={`/market/${asset.symbol}`} style={{ textDecoration:'none', flexShrink:0 }}>
                   <div style={{
@@ -369,10 +475,82 @@ export default function ExplorePage() {
             </div>
           </div>
 
-          {/* Feed header + sort */}
+          {/* Market Pulse Discovery (hidden if no fresh data) */}
+          {!pulseLoading && pulseList.length > 0 && (
+            <div style={{ padding:'16px 20px 0', borderBottom:'1px solid var(--border)' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+                <Radio size={13} strokeWidth={1.5} style={{ color:'var(--accent)' }} />
+                <p style={{ fontSize:11, fontWeight:600, color:'var(--text-3)', letterSpacing:'0.06em', textTransform:'uppercase' }}>
+                  Market Pulse
+                </p>
+                <span style={{ fontSize:10, color:'var(--text-3)', marginLeft:2 }}>via Grok + X</span>
+              </div>
+              <div style={{ display:'flex', gap:10, overflowX:'auto', paddingBottom:16 }}>
+                {pulseList.map(item => {
+                  const sc = SENTIMENT_COLOR[item.sentiment]
+                  return (
+                    <Link key={item.symbol} href={`/market/${item.symbol}`} style={{ textDecoration:'none', flexShrink:0 }}>
+                      <div style={{
+                        width:200, padding:'12px 14px',
+                        background:'var(--surface)', border:'1px solid var(--border)',
+                        borderRadius:12, transition:'border-color 150ms, background 150ms',
+                      }}
+                        onMouseEnter={e => {
+                          const el = e.currentTarget as HTMLDivElement
+                          el.style.borderColor = 'var(--text-3)'
+                          el.style.background = 'var(--surface-raised)'
+                        }}
+                        onMouseLeave={e => {
+                          const el = e.currentTarget as HTMLDivElement
+                          el.style.borderColor = 'var(--border)'
+                          el.style.background = 'var(--surface)'
+                        }}
+                      >
+                        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                          <span style={{ fontSize:12, fontWeight:700, color:'var(--text-1)' }}>
+                            {item.symbol}
+                          </span>
+                          <span style={{
+                            fontSize:10, fontWeight:700, letterSpacing:'0.05em',
+                            color: sc, background:`${sc}18`,
+                            padding:'2px 7px', borderRadius:'var(--radius-badge)',
+                          }}>
+                            {item.sentiment.toUpperCase()}
+                          </span>
+                        </div>
+                        <p style={{
+                          fontSize:12, color:'var(--text-2)', lineHeight:1.45,
+                          display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical',
+                          overflow:'hidden', marginBottom:8,
+                        }}>
+                          {item.summary}
+                        </p>
+                        <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
+                          {item.themes.slice(0, 2).map(t => (
+                            <span key={t} style={{
+                              fontSize:10, color:'var(--text-3)',
+                              background:'var(--surface-raised)',
+                              padding:'2px 6px', borderRadius:4,
+                            }}>
+                              {t}
+                            </span>
+                          ))}
+                        </div>
+                        <p style={{ fontSize:10, color:'var(--text-3)', marginTop:8 }}>
+                          {timeAgo(item.updated_at)} ago
+                        </p>
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Discussions header + sort */}
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 20px', borderBottom:'1px solid var(--border)', flexWrap:'wrap', gap:8 }}>
             <p style={{ fontSize:11, fontWeight:600, color:'var(--text-3)', letterSpacing:'0.06em', textTransform:'uppercase' }}>
-              Your feed
+              Discussions
             </p>
             <div style={{ display:'flex', gap:2 }}>
               {SORTS.map(s => (
@@ -410,46 +588,14 @@ export default function ExplorePage() {
                 </div>
               ))
             ) : feed.length === 0 ? (
-              <div>
-                {/* Market snapshot while feed is empty */}
-                {!pricesLoading && watched.length > 0 && (
-                  <div style={{ padding: '20px 20px 0' }}>
-                    <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 14 }}>
-                      Market Snapshot
-                    </p>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8, marginBottom: 24 }}>
-                      {watched.slice(0, 6).map(asset => (
-                        <Link key={asset.symbol} href={`/market/${asset.symbol}`} style={{ textDecoration: 'none' }}>
-                          <div style={{
-                            padding: '12px 14px', background: 'var(--surface)', border: '1px solid var(--border)',
-                            borderRadius: 10, cursor: 'pointer', transition: 'border-color 150ms',
-                          }}
-                            onMouseEnter={e => ((e.currentTarget as HTMLDivElement).style.borderColor = 'var(--text-3)')}
-                            onMouseLeave={e => ((e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)')}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>{asset.symbol}</span>
-                              <span style={{ fontSize: 11, fontWeight: 600, color: asset.up ? 'var(--up)' : 'var(--down)', fontVariantNumeric: 'tabular-nums' }}>
-                                {asset.change}
-                              </span>
-                            </div>
-                            <MiniSpark pts={asset.pts} up={asset.up} />
-                            <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-1)', marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>
-                              ${asset.price}
-                            </p>
-                          </div>
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <div style={{ padding: '32px 20px', textAlign: 'center', borderTop: watched.length > 0 ? '1px solid var(--border-subtle)' : 'none' }}>
-                  <TrendingUp size={28} strokeWidth={1.5} style={{ color: 'var(--text-3)', marginBottom: 12, opacity: 0.5 }} />
-                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6 }}>No theses published yet</p>
-                  <p style={{ fontSize: 13, color: 'var(--text-3)', maxWidth: 300, margin: '0 auto' }}>
-                    Be the first to share a bullish or bearish thesis on a Stock Token.
-                  </p>
-                </div>
+              <div style={{ padding: '48px 20px', textAlign: 'center' }}>
+                <TrendingUp size={28} strokeWidth={1.5} style={{ color: 'var(--text-3)', marginBottom: 12, opacity: 0.4 }} />
+                <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6 }}>
+                  No discussions yet
+                </p>
+                <p style={{ fontSize: 13, color: 'var(--text-3)', maxWidth: 300, margin: '0 auto' }}>
+                  Be the first to share a bullish or bearish thesis on a Stock Token.
+                </p>
               </div>
             ) : (
               feed.map(post => <FeedCard key={post.id} post={post} />)
@@ -457,7 +603,7 @@ export default function ExplorePage() {
           </div>
         </div>
 
-        {/* ── Right sidebar — hidden on mobile ── */}
+        {/* ── Right sidebar ── */}
         <aside style={{
           width:280, flexShrink:0,
           position:'sticky', top:0, height:'100vh', overflowY:'auto',
@@ -494,7 +640,6 @@ export default function ExplorePage() {
                     </p>
                     <p style={{ fontSize:11, color:'var(--text-3)' }}>{agent.desc}</p>
                   </div>
-                  <span style={{ fontSize:10, color:'var(--text-3)', flexShrink:0 }}>{agent.active}</span>
                 </div>
               ))}
               <div style={{ padding:'10px 12px' }}>
