@@ -16,7 +16,7 @@ export async function GET(
       prices ( price, bid, ask, change_24h, change_7d, volume_24h, market_cap, is_halted, recorded_at ),
       provider_assets (
         execution_method, deep_link_template, supported_network,
-        execution_partners ( name, description, logo_url, website_url )
+        execution_partners ( provider_key, name, description, logo_url, website_url, capabilities )
       )
     `)
     .eq('symbol', symbol.toUpperCase())
@@ -26,6 +26,5 @@ export async function GET(
     .single()
 
   if (error || !data) return Errors.notFound(`Asset ${symbol} not found`)
-
   return ok(data)
 }
