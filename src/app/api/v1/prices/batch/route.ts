@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { ok, Errors } from '@/lib/api/response'
+import { fetchPrice } from '@/lib/adapters/robinhood/client'
 
 export const revalidate = 15
 
@@ -17,6 +18,40 @@ export async function GET(request: Request) {
 
   if (symbols.length === 0) return Errors.badRequest('no valid symbols')
 
+  // Try Robinhood live first when configured — per-symbol resilience via allSettled
+  if (process.env.ROBINHOOD_API_BASE_URL) {
+    const results = await Promise.allSettled(symbols.map(sym => fetchPrice(sym)))
+    const prices: Record<string, object | null> = {}
+    let successCount = 0
+
+    for (let i = 0; i < symbols.length; i++) {
+      const sym = symbols[i]
+      const result = results[i]
+      if (result.status === 'fulfilled') {
+        successCount++
+        const live = result.value
+        prices[sym] = {
+          symbol: live.symbol,
+          price: live.price,
+          bid: live.bid,
+          ask: live.ask,
+          change_24h: null,
+          volume: live.volume,
+          market_cap: null,
+          isHalted: live.isHalted,
+          updatedAt: live.updatedAt,
+        }
+      } else {
+        prices[sym] = null
+      }
+    }
+
+    // If at least one succeeded, return live data (nulls for individual failures)
+    if (successCount > 0) return ok({ prices })
+    // All failed — fall through to Supabase snapshot
+  }
+
+  // Supabase fallback — seeded or last cron snapshot
   const supabase = await createClient()
 
   const { data: assets, error } = await supabase
