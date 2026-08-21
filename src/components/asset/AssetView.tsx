@@ -21,6 +21,7 @@ import {
   BarChart2,
   FileSearch,
   Send,
+  Radio,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────
@@ -64,6 +65,24 @@ interface Agent {
   slug: string
   name: string
   description: string
+}
+
+interface KeyPost {
+  text: string
+  author_handle: string
+  url: string
+  posted_at: string
+  likes: number | null
+}
+
+interface MarketPulse {
+  symbol: string
+  sentiment: 'Bullish' | 'Neutral' | 'Bearish'
+  sentiment_score: number
+  summary: string
+  key_posts: KeyPost[]
+  themes: string[]
+  updated_at: string
 }
 
 interface MarketEvent {
@@ -698,6 +717,7 @@ export function AssetView({ symbol }: { symbol: string }) {
   const [watched, setWatched]           = useState(false)
   const [sort, setSort]                 = useState<SortKey>('hot')
   const [filter, setFilter]             = useState<FilterKey>('all')
+  const [pulse, setPulse]               = useState<MarketPulse | null | undefined>(undefined) // undefined = loading, null = not available
 
   const hasWallet = !!user?.wallet?.address
 
@@ -742,6 +762,14 @@ export function AssetView({ symbol }: { symbol: string }) {
     fetchCore()
     fetchContent()
   }, [symbol])
+
+  // Lazy pulse fetch — fires after price header paints to avoid blocking render
+  useEffect(() => {
+    if (priceLoading) return
+    fetch(`/api/v1/pulse/${symbol}`).then(r => r.json())
+      .then(d => setPulse(d.data ?? null))
+      .catch(() => setPulse(null))
+  }, [symbol, priceLoading])
 
   // Sync watch/bookmark state when asset ID and auth state are known
   useEffect(() => {
@@ -1046,6 +1074,109 @@ export function AssetView({ symbol }: { symbol: string }) {
 
       {/* ── Right sidebar ── */}
       <aside className="asset-sidebar" style={{ width:300, flexShrink:0, padding:'24px 20px', display:'flex', flexDirection:'column', gap:24 }}>
+
+        {/* Market Pulse */}
+        {pulse !== null && (
+          <div>
+            <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:12 }}>
+              <Radio size={11} strokeWidth={2} style={{ color:'var(--accent)' }} />
+              <p style={{ fontSize:11, fontWeight:600, color:'var(--text-3)', letterSpacing:'0.06em', textTransform:'uppercase', margin:0 }}>Market Pulse</p>
+            </div>
+
+            {pulse === undefined ? (
+              /* Skeleton */
+              <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-card)', padding:'14px' }}>
+                <div style={{ width:70, height:22, background:'var(--surface-raised)', borderRadius:6, marginBottom:10, animation:'pulse 1.5s ease-in-out infinite' }} />
+                <div style={{ width:'100%', height:11, background:'var(--surface-raised)', borderRadius:3, marginBottom:5, animation:'pulse 1.5s ease-in-out infinite' }} />
+                <div style={{ width:'85%', height:11, background:'var(--surface-raised)', borderRadius:3, marginBottom:5, animation:'pulse 1.5s ease-in-out infinite' }} />
+                <div style={{ width:'70%', height:11, background:'var(--surface-raised)', borderRadius:3, animation:'pulse 1.5s ease-in-out infinite' }} />
+              </div>
+            ) : (
+              <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-card)', overflow:'hidden' }}>
+                {/* Sentiment header */}
+                <div style={{ padding:'12px 14px', borderBottom:'1px solid var(--border-subtle)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                  <span style={{
+                    fontSize:12, fontWeight:700, letterSpacing:'0.04em',
+                    color: pulse.sentiment === 'Bullish' ? 'var(--up)'
+                         : pulse.sentiment === 'Bearish' ? 'var(--down)'
+                         : 'var(--text-2)',
+                    background: pulse.sentiment === 'Bullish' ? 'rgba(74,222,128,0.12)'
+                              : pulse.sentiment === 'Bearish' ? 'rgba(248,113,113,0.12)'
+                              : 'var(--surface-raised)',
+                    padding:'3px 10px', borderRadius:'var(--radius-badge)',
+                  }}>
+                    {pulse.sentiment === 'Bullish' ? '▲' : pulse.sentiment === 'Bearish' ? '▼' : '●'} {pulse.sentiment}
+                  </span>
+                  <span style={{ fontSize:10, color:'var(--text-3)' }}>
+                    {fmtTime(pulse.updated_at)} ago
+                  </span>
+                </div>
+
+                {/* Summary */}
+                <div style={{ padding:'10px 14px', borderBottom:'1px solid var(--border-subtle)' }}>
+                  <p style={{ fontSize:12, color:'var(--text-2)', lineHeight:1.6, margin:0 }}>
+                    {pulse.summary}
+                  </p>
+                </div>
+
+                {/* Themes */}
+                {pulse.themes.length > 0 && (
+                  <div style={{ padding:'8px 14px', borderBottom:'1px solid var(--border-subtle)', display:'flex', flexWrap:'wrap', gap:5 }}>
+                    {pulse.themes.map(t => (
+                      <span key={t} style={{
+                        fontSize:10, fontWeight:500,
+                        color:'var(--text-3)', background:'var(--surface-raised)',
+                        padding:'2px 7px', borderRadius:'var(--radius-badge)',
+                      }}>
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Key posts */}
+                {pulse.key_posts.length > 0 && (
+                  <div>
+                    {pulse.key_posts.map((post, i) => (
+                      <a
+                        key={i}
+                        href={post.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          display:'block', padding:'9px 14px',
+                          borderBottom: i < pulse.key_posts.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+                          textDecoration:'none',
+                          transition:'background 120ms',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-raised)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:3 }}>
+                          <span style={{ fontSize:11, fontWeight:600, color:'var(--accent)' }}>{post.author_handle}</span>
+                          <span style={{ fontSize:10, color:'var(--text-3)' }}>· {fmtTime(post.posted_at)}</span>
+                          {post.likes != null && (
+                            <span style={{ fontSize:10, color:'var(--text-3)', marginLeft:'auto' }}>♥ {post.likes.toLocaleString()}</span>
+                          )}
+                        </div>
+                        <p style={{ fontSize:11, color:'var(--text-2)', lineHeight:1.5, margin:0,
+                          overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>
+                          {post.text}
+                        </p>
+                      </a>
+                    ))}
+                  </div>
+                )}
+
+                {/* Powered by */}
+                <div style={{ padding:'7px 14px', display:'flex', alignItems:'center', gap:4, borderTop:'1px solid var(--border-subtle)' }}>
+                  <span style={{ fontSize:10, color:'var(--text-3)' }}>Powered by</span>
+                  <span style={{ fontSize:10, fontWeight:600, color:'var(--text-3)' }}>Grok + X</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Token info */}
         <div>
