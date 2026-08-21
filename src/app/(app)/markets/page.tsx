@@ -60,8 +60,6 @@ function DiscussionBar({ value, max }: { value: number; max: number }) {
   )
 }
 
-const TRACKED_SYMBOLS = ['NVDA', 'HOOD', 'TSLA', 'META', 'AMD', 'AAPL', 'COIN', 'MSFT', 'GOOGL', 'AMZN']
-
 export default function MarketsPage() {
   const [moverTab, setMoverTab] = useState<MoverTab>('gainers')
   const [assets, setAssets] = useState<AssetWithPrice[]>([])
@@ -69,48 +67,45 @@ export default function MarketsPage() {
   const [thesisCounts, setThesisCounts] = useState<Record<string, number>>({})
 
   useEffect(() => {
-    // Fetch prices for all tracked symbols in parallel
-    Promise.all(
-      TRACKED_SYMBOLS.map(sym =>
-        fetch(`/api/v1/prices/${sym}`)
-          .then(async r => { if (!r.ok) return null; const j = await r.json(); return j.data ?? null })
-          .catch(() => null)
-      )
-    ).then(results => {
-      const loaded: AssetWithPrice[] = []
-      results.forEach((data, i) => {
-        const sym = TRACKED_SYMBOLS[i]
-        if (data && data.price != null) {
-          const changeVal = data.change_24h ?? 0
-          loaded.push({
-            symbol: sym,
-            name: sym,
-            price: Number(data.price).toFixed(2),
-            change: `${changeVal >= 0 ? '+' : ''}${Number(changeVal).toFixed(2)}%`,
-            up: changeVal >= 0,
-          })
-        }
-      })
-
-      setAssets(loaded)
-      setLoading(false)
-    })
-  }, [])
-
-  // Fetch asset names and thesis counts in parallel
-  useEffect(() => {
+    // Fetch all assets, then batch-fetch prices
     Promise.all([
-      fetch('/api/v1/assets?limit=50').then(r => r.json()).catch(() => null),
+      fetch('/api/v1/assets?limit=200').then(r => r.json()).catch(() => null),
       fetch('/api/v1/theses/counts').then(r => r.json()).catch(() => null),
-    ]).then(([assetsData, countsData]) => {
-      if (assetsData?.assets) {
-        const nameMap: Record<string, string> = {}
-        for (const a of assetsData.assets) nameMap[a.symbol] = a.name
-        setAssets(prev => prev.map(a => ({ ...a, name: nameMap[a.symbol] ?? a.symbol })))
-      }
+    ]).then(async ([assetsData, countsData]) => {
+      const assetList: { symbol: string; name: string }[] = assetsData?.data?.assets ?? []
+
       if (countsData?.data?.counts) {
         setThesisCounts(countsData.data.counts)
       }
+
+      if (assetList.length === 0) {
+        setLoading(false)
+        return
+      }
+
+      const symbols = assetList.map(a => a.symbol)
+      const nameMap: Record<string, string> = Object.fromEntries(assetList.map(a => [a.symbol, a.name]))
+
+      const batchRes = await fetch(`/api/v1/prices/batch?symbols=${symbols.join(',')}`)
+        .then(r => r.json()).catch(() => null)
+      const prices: Record<string, { price: number; change_24h: number | null } | null> = batchRes?.data?.prices ?? {}
+
+      const loaded: AssetWithPrice[] = []
+      for (const sym of symbols) {
+        const p = prices[sym]
+        if (!p || p.price == null) continue
+        const changeVal = p.change_24h ?? 0
+        loaded.push({
+          symbol: sym,
+          name: nameMap[sym] ?? sym,
+          price: Number(p.price).toFixed(2),
+          change: `${changeVal >= 0 ? '+' : ''}${Number(changeVal).toFixed(2)}%`,
+          up: changeVal >= 0,
+        })
+      }
+
+      setAssets(loaded)
+      setLoading(false)
     })
   }, [])
 

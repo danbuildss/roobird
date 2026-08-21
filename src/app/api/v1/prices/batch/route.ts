@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     .split(',')
     .map(s => s.trim().toUpperCase())
     .filter(Boolean)
-    .slice(0, 50)
+    .slice(0, 500)
 
   if (symbols.length === 0) return Errors.badRequest('no valid symbols')
 
