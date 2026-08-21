@@ -110,40 +110,83 @@ Uniquely Roobird — shows where humans and agents are paying attention right no
 
 **Phase 5 — Open Source**: Open agent API surface.
 
+## PR History
+
+### PRs 1–11 (initial build, pre current session)
+- Project init, gstack setup, documentation suite (PRODUCT, DESIGN, ARCHITECTURE, SCHEMA, AGENTS, API, ROADMAP, SECURITY, CONTRIBUTING)
+- Supabase migrations 001–004 (schema, RLS, seed, auth trigger)
+- Next.js scaffold: tsconfig, next.config.ts, Supabase clients, Robinhood adapter
+- API routes: assets, prices, theses, agents
+- Auth: email/password, SIWE wallet sign-in, user sync trigger
+- Core layout + navigation (desktop sidebar + mobile top/drawer/bottom)
+- All 5 main pages: Explore, Markets, Agents, Developers, Asset page (/market/[symbol])
+- Post Composer modal (CMD+N), Search palette (CMD+K)
+- Developer portal (/developers), Dashboard (/dashboard)
+- Human profile (/u/[username]), Agent profile (/agents/[id])
+
+### PR #12 (details unknown — before current session notes)
+
+### PR #13 — Fix build failures (merged)
+- `siwe` marked as serverExternalPackages so Next.js doesn't bundle ethers
+- Added `@stripe/stripe-js` peer dep (required by Privy FiatOnramp)
+- Site was not deploying before this
+
+### PR #14 — Markets page + asset universe growth (merged)
+- /markets now fetches all assets from /api/v1/assets (removed 10-symbol hardcode)
+- Sync route calls fetchAssets() from Robinhood and upserts full stock universe on every cron
+- Assets API cap: 100→500; batch price cap: 50→500
+
+### PR #15 — Per-symbol Supabase price fallback (merged)
+- /api/v1/prices/batch supplements each failed Robinhood symbol from Supabase
+- Sync switches Promise.all → Promise.allSettled (one bad symbol no longer kills whole cron)
+- Markets page seeds price map from assets+joined prices before batch fetch
+
+### PR #16 — Market Pulse via Grok + X (merged)
+- GET /api/v1/pulse/[symbol]: 3-min cache, stale-while-revalidate via after()
+- Calls Grok API (grok-3 + web_search) for real-time X/Twitter sentiment per ticker
+- market_pulse Supabase table + RLS (anon SELECT) + 20-ticker whitelist seeded at epoch
+- AssetView.tsx right sidebar: sentiment badge, summary, themes, up to 3 X posts
+- vercel.json → {} (removed Vercel cron; cron-job.org is sole scheduler)
+- **Migration needed**: supabase/migrations/20260821_market_pulse.sql (user confirmed run)
+
+### PR #17 — Explore rebuild + sync health (OPEN — not merged)
+- Explore page: Moving Now strip (real movers), Market Pulse Discovery section, Discussions rename, real bookmarks watchlist, fixed data envelope unwrapping bugs
+- GET /api/v1/pulse (list endpoint for explore)
+- GET /api/v1/bookmarks?target_type=asset (list mode for watchlist)
+- POST /api/v1/sync: instrumented with sync_runs health tracking
+- **Migration needed**: supabase/migrations/20260821_sync_runs.sql (NOT yet run by user)
+
 ## Current Build Status
-- [x] Project initialized (gstack setup)
-- [x] Documentation suite (PRODUCT, DESIGN, ARCHITECTURE, SCHEMA, AGENTS, API, ROADMAP, SECURITY, CONTRIBUTING)
-- [x] Supabase migrations (schema, RLS, seed, auth trigger)
-- [x] Next.js app scaffold (tsconfig, next.config.ts)
-- [x] Supabase clients (browser, server, middleware)
-- [x] Robinhood market data adapter
-- [x] API routes (assets, prices, theses, agents)
-- [x] Auth (email/password, SIWE wallet sign-in, user sync trigger)
-- [x] Core layout + navigation (desktop sidebar + mobile top/drawer/bottom)
-- [x] Explore page — live prices, live agent sidebar, mobile responsive
-- [x] Markets page — live prices, gainers/losers, mobile responsive
-- [x] Agents page — real API fetch, empty states, loading skeletons
-- [x] Asset page /market/[symbol]
-- [x] Post Composer modal (CMD+N)
-- [x] Search palette (CMD+K)
-- [x] Developer portal (/developers) + Dashboard (/dashboard)
-- [x] Human profile page (/u/[username])
-- [x] Agent profile page (/agents/[id])
-- [ ] Events layer (earnings/filings auto-generate discussion anchors) — Phase 1 priority
-- [ ] Asset page: strengthened with events feed + discussion count
-- [ ] Markets page: Sectors strip, Most Discussed section, /markets/stocks screener
-- [ ] Discussion thread (threaded comments, voting on posts)
+- [x] Project initialized, full docs, migrations, scaffold, auth, nav
+- [x] All 5 main pages: Explore, Markets, Agents, Developers, Asset page
+- [x] Post Composer, Search palette, profiles
+- [x] Live price pipeline: Robinhood → Supabase fallback (PR #14, #15)
+- [x] Market Pulse sidebar card on asset pages (PR #16)
+- [x] market_pulse migration run in Supabase
+- [x] XAI_API_KEY set in Vercel
+- [x] cron-job.org handling sync (not Vercel cron)
+- [ ] PR #17 needs merge (explore rebuild)
+- [ ] sync_runs migration needs to be run
+- [ ] Events layer (earnings/filings) — Phase 1 priority
+- [ ] Asset page: events feed + discussion count
+- [ ] Markets page: Sectors strip, Most Discussed, /markets/stocks screener
+- [ ] Discussion thread (threaded comments, voting)
 - [ ] MCP implementation
 
 ## What's Been Built
 - CLAUDE.md + NOTES.md
 - gstack installed + better-ui + frontend-ui-engineering skills
 - Full documentation suite (9 MD files)
-- Supabase migrations 001–004
+- Supabase migrations 001–004 + market_pulse migration
 - Next.js backend: Supabase clients, Robinhood adapter, API routes, auth
 - All 5 main pages: Explore, Markets, Agents, Developers, Asset page
 - Post Composer, Command Palette, App Nav (mobile-responsive)
 - Human + Agent profile pages, Developer Dashboard
+
+## Open Questions / Known Issues
+- Live site (roobird.vercel.app) user reports UI unchanged since PR #11 — most likely because Explore page rewrite is in PR #17 (not merged) and PRs #13–#16 were backend/data changes not visible on homepage or explore
+- ROBINHOOD_API_BASE_URL must be set in Vercel env — without it sync skips and prices never update
+- CRON_SECRET/SYNC_SECRET must match what cron-job.org sends
 
 ## Key Design Decisions
 - Light interface, white/warm-white background, near-black typography
