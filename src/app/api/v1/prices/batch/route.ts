@@ -42,37 +42,50 @@ export async function GET(request: Request) {
   const prices: Record<string, object | null> = {}
   const needsSupabase: string[] = []
 
-  // Try Robinhood live first — per-symbol resilience via allSettled
-  if (process.env.ROBINHOOD_API_BASE_URL) {
-    const results = await Promise.allSettled(symbols.map(sym => fetchPrice(sym)))
+  // Fetch Robinhood live prices + Supabase change_24h in parallel
+  // Robinhood client has a safe default base URL; Supabase enriches with change_24h
+  const [robinhoodResults, supabaseAll] = await Promise.all([
+    Promise.allSettled(symbols.map(sym => fetchPrice(sym))),
+    createClient().then(sb =>
+      sb.from('assets')
+        .select('symbol, prices ( change_24h, recorded_at )')
+        .in('symbol', symbols)
+        .eq('is_active', true)
+        .order('recorded_at', { ascending: false, referencedTable: 'prices' })
+        .limit(1, { referencedTable: 'prices' })
+    ),
+  ])
 
-    for (let i = 0; i < symbols.length; i++) {
-      const sym = symbols[i]
-      const result = results[i]
-      if (result.status === 'fulfilled') {
-        const live = result.value
-        prices[sym] = {
-          symbol: live.symbol,
-          price: live.price,
-          bid: live.bid,
-          ask: live.ask,
-          change_24h: null,
-          volume: live.volume,
-          market_cap: null,
-          isHalted: live.isHalted,
-          updatedAt: live.updatedAt,
-        }
-      } else {
-        // Robinhood failed for this symbol — queue for Supabase fallback
-        needsSupabase.push(sym)
-      }
+  // Build a change_24h map from Supabase
+  const change24hMap: Record<string, number | null> = {}
+  if (!supabaseAll.error && supabaseAll.data) {
+    for (const asset of supabaseAll.data as Array<{ symbol: string; prices: Array<{ change_24h: number | null }> }>) {
+      change24hMap[asset.symbol] = asset.prices?.[0]?.change_24h ?? null
     }
-  } else {
-    // No Robinhood configured — all symbols go to Supabase
-    needsSupabase.push(...symbols)
   }
 
-  // Supabase fallback for symbols that Robinhood couldn't serve
+  for (let i = 0; i < symbols.length; i++) {
+    const sym = symbols[i]
+    const result = robinhoodResults[i]
+    if (result.status === 'fulfilled') {
+      const live = result.value
+      prices[sym] = {
+        symbol: live.symbol,
+        price: live.price,
+        bid: live.bid,
+        ask: live.ask,
+        change_24h: change24hMap[sym] ?? null,
+        volume: live.volume,
+        market_cap: null,
+        isHalted: live.isHalted,
+        updatedAt: live.updatedAt,
+      }
+    } else {
+      needsSupabase.push(sym)
+    }
+  }
+
+  // Full Supabase fallback for symbols Robinhood couldn't serve
   if (needsSupabase.length > 0) {
     const supabase = await createClient()
     const { data: assets, error } = await supabase

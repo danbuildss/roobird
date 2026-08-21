@@ -11,29 +11,40 @@ export async function GET(
   const { symbol } = await params
   const upper = symbol.toUpperCase()
 
-  // Try live Robinhood API first when configured — gives sub-15-min freshness
-  if (process.env.ROBINHOOD_API_BASE_URL) {
-    try {
-      const live = await fetchPrice(upper)
-      return ok({
-        symbol: live.symbol,
-        price: live.price,
-        bid: live.bid,
-        ask: live.ask,
-        change_24h: null,   // not available from Robinhood price endpoint
-        volume: live.volume,
-        market_cap: null,
-        isHalted: live.isHalted,
-        updatedAt: live.updatedAt,
-      })
-    } catch {
-      // fall through to Supabase
-    }
+  // Fetch Robinhood live price and Supabase change_24h in parallel
+  // Robinhood client has a safe default base URL; change_24h enriches from cron snapshots
+  const [liveResult, supabase] = await Promise.all([
+    fetchPrice(upper).catch(() => null),
+    createClient(),
+  ])
+
+  if (liveResult) {
+    // Also grab change_24h from Supabase (Robinhood doesn't provide it)
+    const { data: asset } = await supabase
+      .from('assets')
+      .select('prices ( change_24h, recorded_at )')
+      .eq('symbol', upper)
+      .eq('is_active', true)
+      .order('recorded_at', { ascending: false, referencedTable: 'prices' })
+      .limit(1, { referencedTable: 'prices' })
+      .single()
+
+    const change24h = (asset?.prices as Array<{ change_24h: number | null }> | undefined)?.[0]?.change_24h ?? null
+
+    return ok({
+      symbol: liveResult.symbol,
+      price: liveResult.price,
+      bid: liveResult.bid,
+      ask: liveResult.ask,
+      change_24h: change24h,
+      volume: liveResult.volume,
+      market_cap: null,
+      isHalted: liveResult.isHalted,
+      updatedAt: liveResult.updatedAt,
+    })
   }
 
-  // Supabase fallback — seeded or last cron snapshot
-  const supabase = await createClient()
-
+  // Full Supabase fallback — seeded or last cron snapshot
   const { data: asset } = await supabase
     .from('assets')
     .select(`
