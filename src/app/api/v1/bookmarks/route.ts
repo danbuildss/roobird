@@ -1,17 +1,44 @@
 import { createClient } from '@/lib/supabase/server'
 import { ok, Errors } from '@/lib/api/response'
 
+// GET /api/v1/bookmarks?target_type=asset
+//   → list mode: returns { assets: [{ id, symbol, name }] } for authenticated user
 // GET /api/v1/bookmarks?target_type=asset&target_id=<uuid>
-// Returns { bookmarked: boolean }
+//   → single check: returns { bookmarked: boolean }
 export async function GET(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return ok({ bookmarked: false })
 
   const { searchParams } = new URL(request.url)
   const target_type = searchParams.get('target_type')
   const target_id   = searchParams.get('target_id')
 
+  // List mode: target_type present but no target_id
+  if (target_type === 'asset' && !target_id) {
+    if (!user) return ok({ assets: [] })
+
+    const { data: bmarks } = await supabase
+      .from('bookmarks')
+      .select('target_id')
+      .eq('user_id', user.id)
+      .eq('target_type', 'asset')
+      .order('created_at', { ascending: false })
+      .limit(20)
+
+    const ids = bmarks?.map(b => b.target_id) ?? []
+    if (!ids.length) return ok({ assets: [] })
+
+    const { data: assets } = await supabase
+      .from('assets')
+      .select('id, symbol, name')
+      .in('id', ids)
+      .eq('is_active', true)
+
+    return ok({ assets: assets ?? [] })
+  }
+
+  // Single check mode
+  if (!user) return ok({ bookmarked: false })
   if (!target_type || !target_id) return Errors.badRequest('target_type and target_id required')
 
   const { data } = await supabase
