@@ -1,6 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { ok, Errors } from '@/lib/api/response'
-import { fetchAssets, fetchPrices } from '@/lib/adapters/robinhood/client'
+import { fetchAssets, fetchPrice } from '@/lib/adapters/robinhood/client'
 
 // POST /api/v1/sync — called by Vercel cron or manually
 // Vercel sets CRON_SECRET automatically; SYNC_SECRET is a manual fallback
@@ -50,30 +50,33 @@ export async function POST(request: Request) {
   let fetched = 0
   let failed = 0
 
-  try {
-    const prices = await fetchPrices(symbols)
-    const rows = prices
-      .filter(p => symbolToId[p.symbol])
-      .map(p => ({
-        asset_id: symbolToId[p.symbol],
-        price: p.price,
-        bid: p.bid,
-        ask: p.ask,
-        is_halted: p.isHalted,
-      }))
+  // Use allSettled so one bad symbol doesn't kill the whole sync
+  const results = await Promise.allSettled(symbols.map(sym => fetchPrice(sym)))
+  const rows: { asset_id: string; price: number; bid: number; ask: number; is_halted: boolean }[] = []
 
-    if (rows.length) {
-      const { error } = await supabase.from('prices').insert(rows)
-      if (error) { failed = rows.length }
-      else { fetched = rows.length }
+  for (let i = 0; i < symbols.length; i++) {
+    const result = results[i]
+    const sym = symbols[i]
+    if (result.status === 'fulfilled') {
+      const p = result.value
+      if (symbolToId[sym]) {
+        rows.push({
+          asset_id: symbolToId[sym],
+          price: p.price,
+          bid: p.bid,
+          ask: p.ask,
+          is_halted: p.isHalted,
+        })
+      }
+    } else {
+      failed++
     }
-  } catch (err) {
-    return ok({
-      synced: 0,
-      failed: symbols.length,
-      upserted_assets: robinhoodAssets.length,
-      reason: err instanceof Error ? err.message : 'Robinhood API unavailable',
-    })
+  }
+
+  if (rows.length) {
+    const { error } = await supabase.from('prices').insert(rows)
+    if (error) { failed += rows.length }
+    else { fetched = rows.length }
   }
 
   return ok({ synced: fetched, failed, upserted_assets: robinhoodAssets.length, symbols })

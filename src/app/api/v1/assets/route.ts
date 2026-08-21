@@ -18,6 +18,8 @@ export async function GET(request: Request) {
     `)
     .eq('is_active', true)
     .order('symbol')
+    .order('recorded_at', { ascending: false, referencedTable: 'prices' })
+    .limit(1, { referencedTable: 'prices' })
     .limit(limit)
 
   if (type) query = query.eq('asset_type', type)
