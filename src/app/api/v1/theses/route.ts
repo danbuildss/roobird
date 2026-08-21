@@ -15,8 +15,7 @@ export async function GET(request: Request) {
     .from('theses')
     .select(`
       id, author_id, author_type, asset_id, stance, title, body, visibility, created_at,
-      assets ( symbol, name ),
-      users ( username, avatar_url )
+      assets ( symbol, name )
     `)
     .eq('visibility', 'public')
     .order('created_at', { ascending: false })
@@ -36,7 +35,10 @@ export async function GET(request: Request) {
   if (cursor)    query = query.lt('created_at', cursor)
 
   const { data, error } = await query
-  if (error) return Errors.internal()
+  if (error) {
+    console.error('theses query failed', { code: error.code, message: error.message })
+    return Errors.internal()
+  }
 
   const nextCursor = data.length === limit ? data[data.length - 1].created_at : null
 
