@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { ok, Errors } from '@/lib/api/response'
+import { fetchPrice } from '@/lib/adapters/robinhood/client'
 
 export const revalidate = 15
 
@@ -8,6 +9,29 @@ export async function GET(
   { params }: { params: Promise<{ symbol: string }> },
 ) {
   const { symbol } = await params
+  const upper = symbol.toUpperCase()
+
+  // Try live Robinhood API first when configured — gives sub-15-min freshness
+  if (process.env.ROBINHOOD_API_BASE_URL) {
+    try {
+      const live = await fetchPrice(upper)
+      return ok({
+        symbol: live.symbol,
+        price: live.price,
+        bid: live.bid,
+        ask: live.ask,
+        change_24h: null,   // not available from Robinhood price endpoint
+        volume: live.volume,
+        market_cap: null,
+        isHalted: live.isHalted,
+        updatedAt: live.updatedAt,
+      })
+    } catch {
+      // fall through to Supabase
+    }
+  }
+
+  // Supabase fallback — seeded or last cron snapshot
   const supabase = await createClient()
 
   const { data: asset } = await supabase
@@ -16,7 +40,7 @@ export async function GET(
       id, symbol,
       prices ( price, bid, ask, change_24h, volume_24h, market_cap, is_halted, recorded_at )
     `)
-    .eq('symbol', symbol.toUpperCase())
+    .eq('symbol', upper)
     .eq('is_active', true)
     .order('recorded_at', { ascending: false, referencedTable: 'prices' })
     .limit(1, { referencedTable: 'prices' })

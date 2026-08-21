@@ -3,9 +3,9 @@ import { ok, Errors } from '@/lib/api/response'
 import { fetchPrices } from '@/lib/adapters/robinhood/client'
 
 // POST /api/v1/sync — called by Vercel cron or manually
-// Requires Authorization: Bearer <SYNC_SECRET>
+// Vercel sets CRON_SECRET automatically; SYNC_SECRET is a manual fallback
 export async function POST(request: Request) {
-  const secret = process.env.SYNC_SECRET
+  const secret = process.env.CRON_SECRET ?? process.env.SYNC_SECRET
   const auth = request.headers.get('authorization') ?? ''
 
   if (!secret || auth !== `Bearer ${secret}`) {
