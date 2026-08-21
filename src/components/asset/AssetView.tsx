@@ -819,9 +819,15 @@ export function AssetView({ symbol }: { symbol: string }) {
                 <div style={{ width:200, height:40, background:'var(--surface-raised)', borderRadius:6, animation:'pulse 1.5s ease-in-out infinite' }} />
               ) : (
                 <div style={{ display:'flex', alignItems:'baseline', gap:10 }}>
-                  <span style={{ fontSize:32, fontWeight:700, letterSpacing:'-0.03em', color:'var(--text-1)', fontVariantNumeric:'tabular-nums' }}>
-                    ${price > 0 ? price.toFixed(2) : '—'}
-                  </span>
+                  {price > 0 ? (
+                    <span style={{ fontSize:32, fontWeight:700, letterSpacing:'-0.03em', color:'var(--text-1)', fontVariantNumeric:'tabular-nums' }}>
+                      ${price.toFixed(2)}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize:14, fontWeight:400, color:'var(--text-3)' }}>
+                      Price temporarily unavailable
+                    </span>
+                  )}
                   {change24h !== 0 && (
                     <span style={{
                       fontSize:15, fontWeight:500,

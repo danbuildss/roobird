@@ -228,28 +228,26 @@ export default function ExplorePage() {
     Promise.all(
       WATCHED_SYMBOLS.map(sym =>
         fetch(`/api/v1/prices/${sym}`)
-          .then(r => r.ok ? r.json() : null)
+          .then(async r => { if (!r.ok) return null; const j = await r.json(); return j.data ?? null })
           .catch(() => null)
       )
     ).then(results => {
       const assets: WatchedAsset[] = []
       results.forEach((data, i) => {
         const sym = WATCHED_SYMBOLS[i]
-        if (data && data.price) {
+        if (data && data.price != null) {
           const up = (data.change_24h ?? 0) >= 0
           assets.push({
             symbol: sym,
             price: Number(data.price).toFixed(2),
             change: data.change_24h != null
               ? `${data.change_24h >= 0 ? '+' : ''}${Number(data.change_24h).toFixed(2)}%`
-              : '--',
+              : '—',
             up,
             pts: makePts(up),
           })
-        } else {
-          // Fallback entry with no price
-          assets.push({ symbol: sym, price: '--', change: '--', up: true, pts: makePts(true) })
         }
+        // Only include symbols that have actual price data
       })
       setWatched(assets)
       setPricesLoading(false)
@@ -412,8 +410,46 @@ export default function ExplorePage() {
                 </div>
               ))
             ) : feed.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
-                No posts yet — be the first to publish a thesis.
+              <div>
+                {/* Market snapshot while feed is empty */}
+                {!pricesLoading && watched.length > 0 && (
+                  <div style={{ padding: '20px 20px 0' }}>
+                    <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 14 }}>
+                      Market Snapshot
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8, marginBottom: 24 }}>
+                      {watched.slice(0, 6).map(asset => (
+                        <Link key={asset.symbol} href={`/market/${asset.symbol}`} style={{ textDecoration: 'none' }}>
+                          <div style={{
+                            padding: '12px 14px', background: 'var(--surface)', border: '1px solid var(--border)',
+                            borderRadius: 10, cursor: 'pointer', transition: 'border-color 150ms',
+                          }}
+                            onMouseEnter={e => ((e.currentTarget as HTMLDivElement).style.borderColor = 'var(--text-3)')}
+                            onMouseLeave={e => ((e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)')}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>{asset.symbol}</span>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: asset.up ? 'var(--up)' : 'var(--down)', fontVariantNumeric: 'tabular-nums' }}>
+                                {asset.change}
+                              </span>
+                            </div>
+                            <MiniSpark pts={asset.pts} up={asset.up} />
+                            <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-1)', marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>
+                              ${asset.price}
+                            </p>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div style={{ padding: '32px 20px', textAlign: 'center', borderTop: watched.length > 0 ? '1px solid var(--border-subtle)' : 'none' }}>
+                  <TrendingUp size={28} strokeWidth={1.5} style={{ color: 'var(--text-3)', marginBottom: 12, opacity: 0.5 }} />
+                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6 }}>No theses published yet</p>
+                  <p style={{ fontSize: 13, color: 'var(--text-3)', maxWidth: 300, margin: '0 auto' }}>
+                    Be the first to share a bullish or bearish thesis on a Stock Token.
+                  </p>
+                </div>
               </div>
             ) : (
               feed.map(post => <FeedCard key={post.id} post={post} />)
