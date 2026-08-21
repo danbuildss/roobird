@@ -4,7 +4,7 @@ import { ok, Errors } from '@/lib/api/response'
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const type = searchParams.get('type')
-  const limit = Math.min(parseInt(searchParams.get('limit') ?? '50'), 100)
+  const limit = Math.min(parseInt(searchParams.get('limit') ?? '50'), 500)
   const cursor = searchParams.get('cursor')
 
   const supabase = await createClient()

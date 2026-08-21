@@ -1,6 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { ok, Errors } from '@/lib/api/response'
-import { fetchPrices } from '@/lib/adapters/robinhood/client'
+import { fetchAssets, fetchPrices } from '@/lib/adapters/robinhood/client'
 
 // POST /api/v1/sync — called by Vercel cron or manually
 // Vercel sets CRON_SECRET automatically; SYNC_SECRET is a manual fallback
@@ -18,6 +18,24 @@ export async function POST(request: Request) {
   }
 
   const supabase = await createServiceClient()
+
+  // Upsert full asset list from Robinhood so the DB grows beyond seeded rows
+  let robinhoodAssets: Awaited<ReturnType<typeof fetchAssets>> = []
+  try {
+    robinhoodAssets = await fetchAssets()
+    if (robinhoodAssets.length > 0) {
+      const assetUpsertRows = robinhoodAssets.map(a => ({
+        symbol: a.symbol,
+        name: a.name,
+        contract_address: a.contractAddress,
+        logo_url: a.logoUrl,
+        is_active: a.status === 'active',
+      }))
+      await supabase.from('assets').upsert(assetUpsertRows, { onConflict: 'symbol', ignoreDuplicates: false })
+    }
+  } catch {
+    // Non-fatal: fall back to existing DB assets
+  }
 
   const { data: assetRows, error: assetErr } = await supabase
     .from('assets')
@@ -53,11 +71,12 @@ export async function POST(request: Request) {
     return ok({
       synced: 0,
       failed: symbols.length,
+      upserted_assets: robinhoodAssets.length,
       reason: err instanceof Error ? err.message : 'Robinhood API unavailable',
     })
   }
 
-  return ok({ synced: fetched, failed, symbols })
+  return ok({ synced: fetched, failed, upserted_assets: robinhoodAssets.length, symbols })
 }
 
 // GET /api/v1/sync — Vercel cron calls GET; delegate to POST logic
