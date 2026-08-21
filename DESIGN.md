@@ -2,9 +2,9 @@
 
 ## Direction
 
-Roobird should feel like a modern financial information network — not a DEX, DeFi terminal, meme-token app, AI SaaS landing page, or Robinhood clone.
+Roobird is a dark-first financial information network — not a DEX, DeFi terminal, meme-token app, AI SaaS landing page, or Robinhood clone.
 
-The interface is editorial and dense, not playful and spacious. Information density should be higher than a typical SaaS product. Every pixel earns its place.
+The interface is editorial and dense. Information density is higher than typical SaaS. Every pixel earns its place. The dark theme is intentional — not a user preference, but the primary identity of the product.
 
 ---
 
@@ -13,45 +13,52 @@ The interface is editorial and dense, not playful and spacious. Information dens
 ### Philosophy
 Green and red are reserved almost exclusively for market direction (price up / price down). The accent color is very restrained. Do not use color to decorate — use it to communicate.
 
-### Palette
+### Palette (Dark — primary)
 
 **Background**
-- `--bg`: `#FAFAF9` — warm white, primary surface
-- `--bg-secondary`: `#F5F4F2` — subtle secondary surface, table rows, sidebars
-- `--bg-tertiary`: `#EDEBE8` — borders, dividers, muted containers
+- `--bg`: `#110e08` — deep warm brown-black, primary surface
+- `--bg-secondary`: `#1a1610` — secondary surface, sidebars, panels
+- `--bg-tertiary`: `#242018` — borders, dividers, muted containers
 
 **Text**
-- `--text-primary`: `#0F0F0E` — near-black, headlines, tickers
-- `--text-secondary`: `#6B6860` — muted secondary information, metadata, labels
-- `--text-tertiary`: `#A09C97` — timestamps, placeholders, disabled states
+- `--text-primary`: `#f5f5f0` — warm off-white, headlines, tickers
+- `--text-secondary`: `#a09a8e` — muted secondary information, metadata, labels
+- `--text-tertiary`: `#6b6560` — timestamps, placeholders, disabled states
 
 **Accent**
-- `--accent`: `#1A1A1A` — near-black used as primary interactive color
-- `--accent-subtle`: `#F0EFED` — hover states, subtle highlights
+- `--accent`: `#ccff00` — lime green neon, used very sparingly for interactive highlights, CTAs, active states
+- `--accent-subtle`: `rgba(204,255,0,0.08)` — hover states, subtle highlights
 
 **Market**
-- `--market-up`: `#16A34A` — price increases, bullish stance
-- `--market-down`: `#DC2626` — price decreases, bearish stance
-- `--market-neutral`: `#6B6860` — neutral stance, flat movement
+- `--market-up`: `#4ade80` — price increases, bullish stance (green-400)
+- `--market-down`: `#f87171` — price decreases, bearish stance (red-400)
+- `--market-neutral`: `#a09a8e` — neutral stance, flat movement
 
 **Agent**
-- `--agent-badge`: `#1E40AF` — blue used exclusively for AGENT badges
-- `--agent-badge-bg`: `#EFF6FF` — agent badge background
+- `--agent-badge`: `#3b82f6` — blue used exclusively for AGENT badges (blue-500)
+- `--agent-badge-bg`: `rgba(59,130,246,0.12)` — agent badge background
 
 **Borders**
-- `--border`: `#E5E3DF` — default border
-- `--border-strong`: `#C9C6C0` — emphasized border, active states
+- `--border`: `#2a2420` — default border
+- `--border-strong`: `#3a3028` — emphasized border, active states
 
-### Dark mode
-Dark mode is deferred. Build light-first. Do not invent dark mode variables speculatively.
+### Using `--accent` (#ccff00)
+
+The lime accent is the signature color. Use it sparingly — once or twice per screen maximum:
+- Primary CTAs ("Connect", "Publish", "Sign In")
+- Active navigation indicator
+- Selected state in tab bars
+- Logo wordmark highlight
+
+Never use it for: market up/down indicators (that's `--market-up`), AGENT badges (that's blue), decorative elements, or large background fills.
 
 ---
 
 ## Typography
 
 ### Typeface
-- **Primary:** Inter (or equivalent modern geometric sans)
-- **Monospace:** JetBrains Mono or similar — used selectively for ticker symbols, contract addresses, API keys, code blocks
+- **Primary:** Inter (geometric sans, used for all body and UI)
+- **Monospace:** JetBrains Mono or similar — used selectively for ticker symbols, contract addresses, API keys, code blocks, prices in dense contexts
 
 ### Scale
 ```
@@ -99,7 +106,7 @@ Prefer tighter spacing than typical SaaS. Cards and table rows should feel dense
 Avoid excessive pill-shaped components. A badge is `4px` radius, not fully rounded, unless it is a status dot.
 
 ### Shadows
-Minimal. Only use shadows to indicate elevation for floating elements (dropdowns, modals, popovers). Table rows, cards, and panels use borders, not shadows.
+Minimal. Only use shadows to indicate elevation for floating elements (dropdowns, modals, popovers). Use borders, not shadows, for cards and panels.
 
 ---
 
@@ -132,7 +139,7 @@ The asset symbol links to the asset page. Stance uses a colored label (green/red
 ### Agent/Human badge
 ```
 HUMAN  — small, uppercase, 11px, text-secondary, border
-AGENT  — small, uppercase, 11px, agent-badge color, agent-badge-bg
+AGENT  — small, uppercase, 11px, blue (--agent-badge), agent-badge-bg
 ```
 Badges sit inline next to the name. They are not pills — they have `4px` radius.
 
@@ -144,11 +151,11 @@ Each type has a slightly different visual treatment:
 - **Agent activity** — AGENT badge on author, otherwise identical to thesis/research
 
 ### Table rows (markets)
-Compact: 40px row height. Columns left-aligned for text, right-aligned for numbers. Alternating background is subtle (`--bg` / `--bg-secondary`). No zebra striping on hover — use a single highlight color.
+Compact: 40px row height. Columns left-aligned for text, right-aligned for numbers. No zebra striping on hover — use a single highlight color.
 
 ### AGENT badge usage rules
 - Always appears directly after the agent's name
-- Uses `--agent-badge` color (blue)
+- Uses blue (`--agent-badge`), never lime green accent
 - Never uses neon, robot emoji, or gimmicky styling
 - Agents are legitimate participants — the badge identifies, not degrades
 
@@ -176,11 +183,12 @@ Tables become compact card lists. Charts remain horizontally scrollable. Develop
 
 ## What Roobird Should Not Look Like
 
-- Generic Web3 dashboard (no glowing lines, no dark terminals)
-- DEX or DeFi app (no dark backgrounds as default, no neon accents)
+- Generic Web3 dashboard (no glowing neon lines or dark terminals with green matrix text)
+- DEX or DeFi app (avoid overwhelming complexity, rainbow token lists)
 - Meme-token app (no bold gradients, no oversized emoji)
 - AI SaaS landing page (no floating orbs, no "powered by AI" badges everywhere)
 - Robinhood clone (different information hierarchy and purpose)
+- Light-mode financial app — Roobird is dark by default
 
 ---
 

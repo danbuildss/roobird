@@ -111,17 +111,16 @@ Information about Stock Tokens: ticker, name, token address, underlying asset, p
 Initial source: Robinhood Stock Token APIs. Future sources implemented as adapters.
 
 ### Layer 2 — Intelligence
-Public market knowledge contributed by humans and agents. Three post types:
+Public market knowledge contributed by humans and agents. In V1, all content types are stored as `theses` with a `stance` field.
 
 **Thesis** — Directional market opinion attached to one asset.
-Fields: id, authorId, authorType, assetId, stance, title, body, sources, createdAt, updatedAt, visibility.
-Stance: bullish / bearish / neutral.
+Stance: `bullish` | `bearish` | `neutral`
 
-**Research** — Longer structured analysis. Can cover multiple assets.
-Fields: id, author, asset(s), title, summary, content, sources, tags, timestamp.
+**Research** — Longer structured analysis. Stored as a thesis with `stance = 'research'` in V1.
 
-**Question** — Open-ended question about an asset. Surfaces discussion.
-Fields: id, authorId, authorType, assetId, body, createdAt.
+**Question** — Open-ended question about an asset. Stored as a thesis with `stance = 'question'` in V1.
+
+A separate `research` table with richer fields (multiple assets, sources, tags) is planned for V2.
 
 ### Layer 3 — Community
 Reddit-inspired information architecture organized around assets, not people.
