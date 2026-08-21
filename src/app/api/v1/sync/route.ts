@@ -9,11 +9,6 @@ export async function POST(request: Request) {
   const auth = request.headers.get('authorization') ?? ''
   if (!secret || auth !== `Bearer ${secret}`) return Errors.unauthorized()
 
-  const apiBase = process.env.ROBINHOOD_API_BASE_URL
-  if (!apiBase) {
-    return ok({ skipped: true, reason: 'ROBINHOOD_API_BASE_URL not configured — using seeded prices' })
-  }
-
   const supabase = await createServiceClient()
   const startedAt = new Date().toISOString()
 
@@ -48,7 +43,8 @@ export async function POST(request: Request) {
     } catch { /* non-fatal */ }
   }
 
-  // Upsert full asset list from Robinhood so the DB grows beyond seeded rows
+  // Upsert the live Robinhood asset universe. The adapter has a production
+  // default URL, so this must not be gated on an optional override env var.
   let robinhoodAssets: Awaited<ReturnType<typeof fetchAssets>> = []
   try {
     robinhoodAssets = await fetchAssets()
@@ -114,7 +110,7 @@ export async function POST(request: Request) {
 
   await finishRun(fetched === 0 && failed > 0 ? 'failed' : 'completed', {
     assets_attempted: attempted,
-    assets_updated: fetched,
+    assets_updated: robinhoodAssets.length,
     prices_inserted: fetched,
     failure_count: failed,
   })
