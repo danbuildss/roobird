@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowDownRight, ArrowUpRight, Bot, Code2, Radio, TrendingUp } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, Bot, Code2, Plus, Radio, TrendingUp } from 'lucide-react'
 
 type Price = { price: number; change_24h: number | null }
 type Pulse = { symbol: string; sentiment: 'Bullish' | 'Neutral' | 'Bearish'; summary: string; themes: string[]; updated_at: string }
@@ -27,6 +27,44 @@ export default function ExplorePage() {
   const [feed, setFeed] = useState<FeedItem[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
+  const [addMarketOpen, setAddMarketOpen] = useState(false)
+  const [addingSymbol, setAddingSymbol]   = useState<string | null>(null)
+  const addMarketRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!addMarketOpen) return
+    const handler = (e: MouseEvent) => {
+      if (addMarketRef.current && !addMarketRef.current.contains(e.target as Node)) {
+        setAddMarketOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [addMarketOpen])
+
+  const addMarket = useCallback(async (sym: string) => {
+    if (addingSymbol) return
+    setAddingSymbol(sym)
+    try {
+      const assetRes = await fetch(`/api/v1/assets/${sym}`)
+      const assetJson = await assetRes.json()
+      const asset_id = assetJson.data?.id
+      if (!asset_id) return
+      const res = await fetch('/api/v1/bookmarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_type: 'asset', target_id: asset_id }),
+      })
+      if (res.ok) {
+        setWatch(prev => prev.includes(sym) ? prev : [...prev, sym])
+        setAddMarketOpen(false)
+      }
+    } catch {
+      // silently ignore
+    } finally {
+      setAddingSymbol(null)
+    }
+  }, [addingSymbol])
 
   useEffect(() => {
     const load = async () => {
@@ -95,7 +133,36 @@ export default function ExplorePage() {
       </section>
 
       <section style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
-        <Label>Watching</Label>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>Watching</span>
+          <div ref={addMarketRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setAddMarketOpen(o => !o)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 11, color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-2)')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-3)')}
+            >
+              <Plus size={11} strokeWidth={2} />Add markets
+            </button>
+            {addMarketOpen && (() => {
+              const available = SYMBOLS.filter(s => !watch.includes(s))
+              return (
+                <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 100, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: 160, padding: '6px 0' }}>
+                  {available.length === 0
+                    ? <p style={{ fontSize: 12, color: 'var(--text-3)', padding: '8px 14px' }}>All markets added</p>
+                    : available.map(sym => (
+                      <button key={sym} disabled={addingSymbol === sym} onClick={() => addMarket(sym)} style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '7px 14px', fontSize: 13, fontWeight: 600, color: 'var(--text-1)', textAlign: 'left', opacity: addingSymbol === sym ? 0.5 : 1 }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-raised)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                      >
+                        {addingSymbol === sym ? '…' : sym}
+                      </button>
+                    ))}
+                </div>
+              )
+            })()}
+          </div>
+        </div>
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
           {loading ? <Skeletons count={6} /> : watched.map(([symbol, quote]) => <MarketCard key={symbol} symbol={symbol} quote={quote} />)}
         </div>

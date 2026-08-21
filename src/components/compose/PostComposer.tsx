@@ -177,12 +177,52 @@ export function PostComposer() {
   const [body, setBody]         = useState<string>('')
   const [citations, setCitations] = useState<string[]>([''])
   const [preview, setPreview]   = useState(false)
+  const [publishing, setPublishing] = useState(false)
+  const [publishError, setPublishError] = useState<string | null>(null)
   const titleRef = useRef<HTMLTextAreaElement>(null)
 
   const reset = useCallback(() => {
     setStance(''); setSymbol(''); setTitle(''); setBody('')
-    setCitations(['']); setPreview(false)
+    setCitations(['']); setPreview(false); setPublishError(null)
   }, [])
+
+  const handlePublish = useCallback(async () => {
+    const ready = !!stance && !!symbol && title.trim().length >= 10
+    if (!ready || publishing) return
+    setPublishing(true)
+    setPublishError(null)
+    try {
+      const assetRes = await fetch(`/api/v1/assets/${symbol}`)
+      const assetJson = await assetRes.json()
+      const asset_id = assetJson.data?.id
+      if (!asset_id) {
+        setPublishError('Asset not found. Please choose a valid asset.')
+        return
+      }
+      const res = await fetch('/api/v1/theses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          asset_id,
+          stance: stance.toLowerCase(),
+          title: title.trim(),
+          body: body.trim(),
+          visibility: 'public',
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setPublishError(json.error?.message ?? 'Failed to publish. Please try again.')
+        return
+      }
+      setOpen(false)
+      setTimeout(reset, 200)
+    } catch {
+      setPublishError('Network error. Please try again.')
+    } finally {
+      setPublishing(false)
+    }
+  }, [publishing, symbol, stance, title, body, reset])
 
   const openComposer = useCallback((e?: Event) => {
     const detail = (e as CustomEvent)?.detail
@@ -453,18 +493,23 @@ export function PostComposer() {
           background:'var(--surface-raised)',
           flexShrink:0,
         }}>
-          <div style={{ display:'flex', gap:8, fontSize:11, color:'var(--text-3)' }}>
-            {!stance && <span style={{ color:'var(--text-3)' }}>Choose a stance</span>}
-            {stance && !symbol && <span style={{ color:'var(--text-3)' }}>Choose an asset</span>}
-            {stance && symbol && title.trim().length < 10 && <span style={{ color:'var(--text-3)' }}>Add a headline (min 10 chars)</span>}
-            {canPublish && (
-              <span style={{ color:'var(--up)', display:'flex', alignItems:'center', gap:4 }}>
-                <Check size={11} strokeWidth={2}/> Ready to publish
-              </span>
+          <div style={{ display:'flex', flexDirection:'column', gap:4, flex:1, minWidth:0 }}>
+            <div style={{ display:'flex', gap:8, fontSize:11, color:'var(--text-3)' }}>
+              {!stance && <span>Choose a stance</span>}
+              {stance && !symbol && <span>Choose an asset</span>}
+              {stance && symbol && title.trim().length < 10 && <span>Add a headline (min 10 chars)</span>}
+              {canPublish && !publishError && (
+                <span style={{ color:'var(--up)', display:'flex', alignItems:'center', gap:4 }}>
+                  <Check size={11} strokeWidth={2}/> Ready to publish
+                </span>
+              )}
+            </div>
+            {publishError && (
+              <span style={{ fontSize:11, color:'var(--down)' }}>{publishError}</span>
             )}
           </div>
           <div style={{ display:'flex', gap:8 }}>
-            <button onClick={closeComposer}
+            <button onClick={closeComposer} disabled={publishing}
               style={{
                 padding:'8px 16px', borderRadius:'var(--radius-pill)',
                 border:'1px solid var(--border)', background:'transparent',
@@ -477,21 +522,22 @@ export function PostComposer() {
               Cancel
             </button>
             <button
-              disabled={!canPublish}
-              onClick={closeComposer}
+              disabled={!canPublish || publishing}
+              onClick={handlePublish}
               style={{
                 padding:'8px 20px', borderRadius:'var(--radius-pill)',
                 border:'none',
                 background: canPublish ? 'var(--accent)' : 'var(--surface-raised)',
                 color: canPublish ? 'var(--accent-text)' : 'var(--text-3)',
-                fontSize:13, fontWeight:700, cursor: canPublish ? 'pointer' : 'not-allowed',
+                fontSize:13, fontWeight:700, cursor: canPublish && !publishing ? 'pointer' : 'not-allowed',
                 transition:'opacity 120ms, background 150ms, color 150ms',
+                opacity: publishing ? 0.6 : 1,
               }}
-              onMouseDown={e => { if(canPublish) e.currentTarget.style.transform='scale(0.96)' }}
+              onMouseDown={e => { if(canPublish && !publishing) e.currentTarget.style.transform='scale(0.96)' }}
               onMouseUp={e => (e.currentTarget.style.transform='scale(1)')}
               onMouseLeave={e => (e.currentTarget.style.transform='scale(1)')}
             >
-              Publish
+              {publishing ? 'Publishing…' : 'Publish'}
             </button>
           </div>
         </div>
