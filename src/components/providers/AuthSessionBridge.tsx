@@ -1,14 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { createClient } from '@/lib/supabase/client'
 
-type BridgeState = 'idle' | 'syncing' | 'ready' | 'error'
-
 export function AuthSessionBridge() {
   const { ready, authenticated, getAccessToken } = usePrivy()
-  const [state, setState] = useState<BridgeState>('idle')
   const syncing = useRef(false)
 
   useEffect(() => {
@@ -17,21 +14,17 @@ export function AuthSessionBridge() {
     const supabase = createClient()
 
     if (!authenticated) {
-      void supabase.auth.signOut().finally(() => setState('idle'))
+      void supabase.auth.signOut()
       return
     }
 
     let cancelled = false
     syncing.current = true
-    setState('syncing')
 
     async function bridge() {
       try {
         const existing = await supabase.auth.getSession()
-        if (existing.data.session) {
-          if (!cancelled) setState('ready')
-          return
-        }
+        if (existing.data.session) return
 
         const token = await getAccessToken()
         if (!token) throw new Error('Privy did not return an access token')
@@ -48,13 +41,9 @@ export function AuthSessionBridge() {
         const { error } = await supabase.auth.setSession(payload.data.session)
         if (error) throw error
 
-        if (!cancelled) {
-          setState('ready')
-          window.dispatchEvent(new CustomEvent('roobird:session-ready'))
-        }
+        if (!cancelled) window.dispatchEvent(new CustomEvent('roobird:session-ready'))
       } catch (error) {
         console.error('authentication session bridge failed', error)
-        if (!cancelled) setState('error')
       } finally {
         syncing.current = false
       }
@@ -64,5 +53,5 @@ export function AuthSessionBridge() {
     return () => { cancelled = true }
   }, [ready, authenticated, getAccessToken])
 
-  return <span data-auth-session={state} hidden aria-hidden="true" />
+  return null
 }
