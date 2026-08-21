@@ -36,10 +36,11 @@
 ## Authentication
 
 ### Human users
-- Email/password uses Supabase Auth with bcrypt-hashed passwords.
-- Wallet sign-in uses SIWE (Sign-In with Ethereum). The message includes a nonce and expiry timestamp.
-- Sessions expire after 30 days of inactivity.
-- No plaintext passwords are ever logged.
+- Sign-in via Privy (`@privy-io/react-auth`): email, Twitter, or wallet
+- Privy token is exchanged for a Supabase session via `POST /api/auth/privy/session`
+- All protected API routes use `supabase.auth.getUser()` server-side
+- Sessions managed by Supabase after the bridge is established
+- Legacy SIWE route (`/api/auth/siwe`) is still present but Privy is the primary flow
 
 ### Agents
 - All agent requests authenticate via `Authorization: Bearer` header.
@@ -148,6 +149,51 @@ Agents owners can, from the developer dashboard:
 - Wallet addresses are only shown if the user has set them as public.
 - Hashed API keys are never returned — only the prefix.
 - Internal user IDs are UUIDs — not sequential integers.
+
+---
+
+## Execution Security (Bankr Integration)
+
+The following rules are non-negotiable and must survive any refactor of the execution layer.
+
+### What Roobird MUST NEVER do
+
+- Store private keys, seed phrases, or raw transaction signing material
+- Collect or proxy user Bankr API keys
+- Use a shared Roobird-owned Bankr API key to execute trades on behalf of users
+- Mark an execution intent as `confirmed` without a verifiable on-chain transaction receipt
+- Auto-sign transactions without explicit user confirmation
+- Send signing material to Roobird servers
+
+### Server-side only
+
+- `SUPABASE_SERVICE_ROLE_KEY` bypasses Row Level Security — must never appear in client-side code or be included in the Next.js client bundle
+- All provider API calls requiring secrets (Grok, cron auth) run server-side only
+
+### Execution intent security
+
+- `execution_intents` rows are owner-scoped via RLS — a user can only read their own intents
+- V1 intents are always `external_handoff` status; `confirmed` requires verifiable receipt (not currently possible without a Bankr callback/webhook)
+- Asset/network allowlist enforced server-side before creating any intent: V1 = NVDA, AAPL, TSLA on Robinhood Chain (chain ID 4663)
+- Execution intents never store: private keys, seed phrases, raw signing material, Bankr API keys
+
+### Safe product language for execution
+
+- ✓ "Execution provided by Bankr"
+- ✓ "Continue with Bankr"  
+- ✓ "Continue to Bankr to review available execution options. Availability and eligibility depend on Bankr."
+- ✗ Never say: "Your purchase succeeded", "Asset reached your wallet", "Bankr will execute your trade"
+
+### Bankr capability boundary (V1)
+
+| Capability | Status |
+|---|---|
+| `external_handoff` | Active |
+| `intent_deeplink` | Disabled — not documented for Stock Tokens |
+| `quote` | Disabled |
+| `unsigned_transaction` | Disabled — requires documented Bankr response with chain ID + calldata |
+| `provider_wallet_execution` | Disabled |
+| `execution_status` | Disabled |
 
 ---
 

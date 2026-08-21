@@ -1,211 +1,285 @@
-# Roobird
+# Roobird — Session Memory
+
+Read this at the start of every session. Never ask the user to re-explain things already here.
+
+---
 
 ## What it is
+
 An open market network for tokenized stocks, designed for both humans and autonomous agents.
-- Humans access via consumer web app
-- Agents access programmatically via MCP, API, SDKs
+
+- Humans access via consumer web app at roobird.vercel.app
+- Agents access programmatically via MCP (planned) and REST API (`/api/v1/`)
 - Roobird provides discovery, intelligence, social and coordination layer
-- Trading/execution handled by integrated third-party partners
+- Trading/execution handled by integrated third-party partners (Bankr for V1)
+- **Not a brokerage.** No order routing, no portfolio state, no custody.
 
 ## Positioning
-"Roobird is a market intelligence product that gets better as humans and agents participate."
 
-Core insight: Markets first. The product must deliver standalone value (price data, asset intelligence) before social activity exists. Community grows on top of that foundation — it's not the foundation itself.
+> "A market intelligence product that gets better as humans and agents participate."
 
-**Previous positioning** (archived): "The open market network for humans and agents."
-**Why changed**: Too network-effects framed for a cold-start. New framing lets us ship a useful product on day 1.
+Information Architecture: Reddit-inspired IA applied to financial markets. Asset pages = communities. Posts = theses/research/questions. Voting determines sort order. No Reddit terminology.
 
-## Tech Stack
-- Frontend: Next.js 14, TypeScript, Tailwind CSS, shadcn/ui, Lucide icons
-- Database: PostgreSQL / Supabase (project already exists)
-- Auth: Wallet + conventional
-- Blockchain: Robinhood Chain, viem, wagmi
-- Market Data: Robinhood Stock Token APIs (public, no auth required)
-- Agent Interface: MCP
-- Hosting: Vercel
+---
+
+## Tech Stack (verified against package.json)
+
+| Layer | Choice |
+|---|---|
+| Frontend | Next.js 16.3.1 (App Router), TypeScript |
+| Styling | Tailwind CSS, shadcn/ui, Lucide icons |
+| Database | PostgreSQL via Supabase |
+| Auth | Privy (`@privy-io/react-auth` v3.37.4) + AuthSessionBridge → Supabase |
+| Market data | Robinhood Stock Token API (public, no auth) |
+| Blockchain | Robinhood Chain (chain ID 4663), viem v2 |
+| AI / Sentiment | Grok API (`grok-3` + `web_search`) via `XAI_API_KEY` |
+| Hosting | Vercel (auto-deploy from main) |
+| Scheduler | cron-job.org (external, calls `/api/v1/sync` every 15 min) |
+
+---
+
+## Auth Architecture (important — two-layer)
+
+Roobird uses **Privy** for user-facing sign-in (email, Twitter, wallet) and **Supabase Auth** for server-side session verification. These are bridged:
+
+1. User signs in via Privy modal
+2. `AuthSessionBridge` (`src/components/providers/AuthSessionBridge.tsx`) fires on login
+3. It fetches a Privy access token and POSTs to `/api/auth/privy/session`
+4. That endpoint verifies the Privy token and establishes a Supabase session
+5. All API routes then use `supabase.auth.getUser()` which works because the session is established
+6. `SyncOnLogin` (`src/components/providers/PrivyProvider.tsx`) also fires on Twitter login and syncs `avatar_url` + `username` to the `users` table via `POST /api/v1/me/sync`
+
+**Critical:** Without the bridge session, API writes fail with 401 even though Privy shows the user as authenticated.
+
+Auth routes:
+- `POST /api/auth/privy/session` — Privy token → Supabase session
+- `POST /api/auth/signout` — sign out
+- `GET/POST /api/auth/siwe` — SIWE wallet sign-in (legacy, still present)
+- `GET /api/auth/callback` — OAuth callback
+
+---
 
 ## Robinhood Stock Token API
-Base URL: https://api.robinhood.com/rhj/
-No API key or authentication required. Public, read-only.
 
-Endpoints:
-- GET /assets — full list of Stock Tokens + metadata (symbol, name, contract address, logo, status, corporate action multiplier)
-- GET /prices/{symbol} — live underlying equity bid/ask (USD), volume, trading halt status (15s cache, 60 req/s)
-- GET /corporate-actions — processed splits, dividends affecting tokens (1h cache, 60 req/s)
+Base URL: `https://api.robinhood.com/rhj/`
+No API key or auth required. Public, read-only.
+
+```
+GET /assets              — full list of Stock Tokens (assets[])
+GET /prices/{symbol}     — live bid/ask (quotes[])
+GET /corporate-actions   — splits and dividends
+```
+
+**Critical parsing notes (fixed in PR #19):**
+- Response is `assets[]` not `results[]`
+- Fields: `tokenSymbol`, `tokenName`, not snake_case
+- Prices in `quotes[]` not a flat object
+- Price = `(bid + ask) / 2` (midpoint)
+- Robinhood Chain deployment selected by `chain_id === 4663`
 
 Docs: https://docs.robinhood.com/chain/stock-token-apis/
 
-Important: this is the tokenized Stock Token API only — not the brokerage API.
-No account balances, no order placement, no portfolio data.
+---
 
-## Product Architecture (confirmed)
+## API Routes (actual, as of PR #24)
 
-### Information Architecture Model
-Reddit-inspired IA, financial visual design. Asset pages are communities.
-- Asset = community (not subreddit — no Reddit terminology)
-- Posts = theses / research / questions
-- Voting determines sort order (no public karma score)
-- Sort: Hot · New · Top · Discussed
-- Filter: Bullish · Bearish · Research · Questions · Agents · Humans
-- Comments: fully threaded, humans and agents in same thread
-- Watch markets, not people — home feed is built from watched assets
+All routes under `/api/v1/`. Response envelope: `{ data: ..., error: null }` / `{ data: null, error: { code, message, status } }`.
 
-### Navigation (5 screens)
-- **Explore** — personalized feed from watched markets
-- **Markets** — discovery homepage (TradingView + Koyfin reference)
-- **Asset** `/market/[symbol]` — TradingView header + Reddit community body
-- **Agents** — agent directory
-- **Developers** — API/MCP portal (Vercel/Linear reference)
+| Route | Methods | Notes |
+|---|---|---|
+| `/api/v1/assets` | GET | List/search assets. `limit` up to 500, `search` param. |
+| `/api/v1/assets/[symbol]` | GET | Single asset by symbol (returns id for buy flow). |
+| `/api/v1/prices/[symbol]` | GET | Live price: Robinhood + Supabase `change_24h` enrichment. |
+| `/api/v1/prices/batch` | GET | `?symbols=NVDA,AAPL,...` up to 500. Single Supabase enrichment query. |
+| `/api/v1/theses` | GET, POST | GET: joined asset+user. POST: `{ asset_id, title, body, stance }`. `body` optional, stances: bullish/bearish/neutral/research/question. |
+| `/api/v1/theses/[id]` | GET | Single thesis. |
+| `/api/v1/comments` | GET, POST | Threaded comments. |
+| `/api/v1/agents` | GET, POST | Agent profiles. |
+| `/api/v1/bookmarks` | GET, POST, DELETE | List mode: `?target_type=asset` → `{ assets: [] }`. Check mode: `?target_type=asset&target_id=<uuid>` → `{ bookmarked: bool }`. |
+| `/api/v1/pulse` | GET | List `market_pulse` rows with `updated_at > epoch`. `limit` max 20. |
+| `/api/v1/pulse/[symbol]` | GET | Per-symbol Grok sentiment. Stale-while-revalidate (3 min). Fires background refresh via `after()`. |
+| `/api/v1/events` | GET | Market events feed. |
+| `/api/v1/sync` | POST, GET | Cron endpoint. Auth: `Authorization: Bearer <SYNC_SECRET>`. Upserts assets + prices from Robinhood. Writes to `sync_runs`. |
+| `/api/v1/me/sync` | POST | Syncs `avatar_url` + `username` from Privy Twitter to Supabase `users` table. Called on login. |
+| `/api/v1/users/[username]` | GET | Public user profile by username. |
+| `/api/v1/api-keys` | GET, POST, DELETE | Agent API key management. |
+| `/api/v1/notifications` | GET | User notifications. |
+| `/api/v1/execution-intents` | GET, POST | Buy flow. POST validates asset/wallet/provider, creates intent, returns handoff URL. |
+| `/api/v1/execution-intents/[id]` | GET | Intent status. Owner-scoped. |
 
-NOT in nav: Portfolio, Orders, Trade, Positions, P&L. Not a brokerage.
+---
 
-### Markets Page Structure
-1. Market Pulse strip — S&P / NASDAQ / DOW / Stock Tokens
-2. Trending on Roobird — asset cards with sparklines + post counts
-3. Market Movers — tabbed: Top Gainers / Top Losers / Most Active / Most Discussed
-4. Sectors — sector performance
-5. Most Discussed — bar chart with discussion volume + agents active
+## Pages (actual)
 
-### All Stocks `/markets/stocks`
-Screener table: Company · Price · 24H · Volume · **Roobird** (post count)
-The Roobird column is the owned differentiator — shows network attention, not just market cap.
+| Route | Description |
+|---|---|
+| `/` | Public landing page. Live ticker strip (8 symbols, 15s refresh). Discussion feed. |
+| `/explore` | Personalized feed. Moving Now (top movers by `abs(change_24h)`). Watching (bookmarked assets). Market Pulse discovery. Discussions + events fallback. |
+| `/markets` | Market screener. Asset list with prices. Market Pulse strip. |
+| `/markets/stocks` | Screener table. |
+| `/market/[symbol]` | Asset page. Price header, chart tabs, Market Pulse sidebar, Discussion/Overview/Research/Agents/About tabs. Buy button (NVDA/AAPL/TSLA only). |
+| `/agents` | Agent directory. |
+| `/agents/[id]` | Agent profile. |
+| `/developers` | Developer portal + MCP docs. |
+| `/dashboard` | Developer dashboard. API key management. |
+| `/u/[username]` | Human profile. Fetches from `/api/v1/users/[username]`. |
+| `/auth/signup`, `/auth/signin` | Auth pages (Privy handles the modal). |
 
-### Asset Page Structure
-Top: price header, chart (1D/1W/1M/3M/1Y/ALL), stats, token info + Verify link
-Tabs: Overview · Discussion · Research · Agents · About
-Discussion tab = Reddit IA: post cards with vote count, stance badge, author badge, comment count
+---
 
-### Design References
-- TradingView → Markets, movers, screener, heatmap
-- Koyfin → dashboard composition
-- Reddit → posts, voting, threading, topic-first IA
-- Linear → typography, spacing, component polish
-- Vercel → developer portal
+## Design System (DARK interface)
 
-### Future: Conversation Heatmap
-Size = discussion volume, color intensity = activity growth rate.
-Uniquely Roobird — shows where humans and agents are paying attention right now.
+```css
+--bg: #110e08          /* near-black dark brown */
+--surface: #1a1710
+--surface-raised: #221f18
+--text-1: #f5f3ef      /* near-white */
+--text-2: #94918d      /* mid grey */
+--text-3: #5a5854      /* dim grey */
+--accent: #ccff00      /* lime yellow-green brand color */
+--up: #4ade80           /* green — gains only */
+--down: #f87171         /* red — losses only */
+color-scheme: dark
+```
 
-## Phase Roadmap (Strategic Pivot)
+**Note:** NOTES.md previously said "light interface" — this is wrong. The actual implementation is dark.
 
-**Phase 1 — Markets** (current): Deliver standalone value with zero social activity.
-- Markets page + Asset pages powered by live Robinhood data
-- Events layer: earnings/price-moves/filings auto-generate discussion anchors (cold-start)
-- Minimal posting + voting (seeded by team)
-- No public reputation — rank content, not traders
-- Ship: price data, asset intelligence, event feed, asset community shell
+Design rules:
+- Green/red ONLY for market direction, never for general UI
+- Accent (`#ccff00`) is NOT Web3/DeFi purple — lime green brand color
+- Icon stroke: 1.5px beside regular text, 2px beside semibold
+- `scale(0.96)` on button press (not 0.95)
+- 240px left nav, main content, 280px right sidebar
 
-**Phase 2 — Community**: Human network effects.
-- Asset communities fill with real posts + comments
-- Sort: Hot · New · Top · Discussed (no Reddit terminology)
-- Filter: Bullish · Bearish · Research · Questions · Agents · Humans
-- Watch markets (not people) → personalized Explore feed
+---
 
-**Phase 3 — Agents**: First-class AI participants.
-- Minimal agent API: `markets.search`, `market.get`, `posts.list`, `post.publish`, `discussion.get`, `discussion.reply`
-- Agent badge vs Human badge — same thread, same UX
-- Developer portal (MCP + REST)
+## Database Migrations (Supabase)
 
-**Phase 4 — Execution Partners**: Broker integrations (not a brokerage ourselves).
+| File | Status | Contents |
+|---|---|---|
+| `001_schema.sql` | Run | Core tables: users, assets, prices, theses, comments, votes, bookmarks, agent_profiles, api_keys |
+| `002_rls.sql` | Run | Row Level Security on all tables |
+| `003_seed.sql` | Run | ~20 seeded stock tokens + prices + sample theses/comments |
+| `004_auth_trigger.sql` | Run | `handle_new_user()` trigger: auto-inserts `users` row on Supabase auth user creation |
+| `005_market_events.sql` | Run | Market events table |
+| `006_agent_audit_log.sql` | Run | Agent write audit log |
+| `20260821_market_pulse.sql` | **Run** | `market_pulse` table: symbol PK, sentiment, summary, themes, x_posts, updated_at. Seeded at epoch so first visit triggers Grok refresh. |
+| `20260821_product_flows.sql` | **Run** | Adds `research` and `question` stances to theses, profile metadata fields |
+| `20260821_execution_architecture.sql` | **Run** | `execution_intents` table, `provider_key`/`capabilities` columns on `execution_partners`, Bankr seed row, NVDA/AAPL/TSLA provider_assets |
+| `20260821_sync_runs.sql` | **Run** (tell user to confirm) | `sync_runs` table for cron health tracking. No public SELECT policy (service role only). |
 
-**Phase 5 — Open Source**: Open agent API surface.
+---
+
+## Bankr Execution Architecture (V1)
+
+**Separation of concerns:**
+- Roobird = intelligence, discovery, trade initiation
+- Bankr = external execution provider
+
+**Human path:**
+1. User sees Buy button on NVDA/AAPL/TSLA asset pages only (V1 allowlist)
+2. Clicks Buy → Roobird-native amount + review modal
+3. Modal shows: asset, price, network (Robinhood Chain), wallet, "Execution provided by Bankr"
+4. "Continue with Bankr" → Roobird creates `execution_intent` (status: `external_handoff`) → opens `https://bankr.bot`
+5. Roobird **cannot verify** whether the user completes the purchase after handoff
+6. Intent stays `external_handoff`, never `confirmed`
+
+**Agent path (architecture, not fully built):**
+- External agent → Roobird MCP/API for market intelligence
+- External agent → Bankr Agent API independently, using **operator's own Bankr credentials**
+- Roobird does NOT proxy Bankr API keys. No shared Roobird-owned Bankr execution key.
+
+**Bankr adapter capabilities:**
+- `external_handoff` — ACTIVE
+- `intent_deeplink` — disabled (not documented for Stock Tokens)
+- `quote` — disabled
+- `unsigned_transaction` — disabled (requires documented Bankr response with chain ID + calldata)
+- `provider_wallet_execution` — disabled
+- `execution_status` — disabled
+
+**Security rules (non-negotiable):**
+- Never store or transmit private keys, seed phrases, or raw signing material
+- Never collect user Bankr API keys
+- Never use a shared Roobird-owned Bankr key to trade user funds
+- Never mark a handoff intent as `confirmed` without verifiable on-chain receipt
+- All provider API calls requiring secrets run server-side only
+
+**Safe product language:**
+- ✓ "Execution provided by Bankr"
+- ✓ "Continue with Bankr"
+- ✓ "Continue to Bankr to review available execution options. Availability and eligibility depend on Bankr."
+- ✗ Do NOT say: "Your purchase succeeded", "Asset reached your wallet", "Bankr will definitely execute"
+
+---
+
+## Vercel Environment Variables
+
+| Variable | Required | Notes |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Bypasses RLS — NEVER expose client-side |
+| `SYNC_SECRET` or `CRON_SECRET` | Yes | Must match cron-job.org `Authorization: Bearer` header |
+| `XAI_API_KEY` | Yes | Grok API for Market Pulse sentiment |
+| `NEXT_PUBLIC_PRIVY_APP_ID` | Yes | Privy app ID (`cmt1l660402040chzny0abq42` is hardcoded fallback) |
+| `PRIVY_APP_SECRET` | Yes | Privy server-side verification |
+| `NEXT_PUBLIC_APP_URL` | Yes | Production URL (e.g. `https://roobird.vercel.app`) |
+| `API_KEY_SECRET` | Yes | Used for agent API key signing. Generate: `openssl rand -hex 32` |
+| `ROBINHOOD_API_BASE_URL` | No | Defaults to `https://api.robinhood.com/rhj` |
+| `NEXT_PUBLIC_POSTHOG_KEY` | No | PostHog analytics |
+| `NEXT_PUBLIC_POSTHOG_HOST` | No | PostHog host |
+
+**Do NOT add:** `BANKR_API_KEY` — the V1 Bankr integration is handoff-only and requires no server-side Bankr credential.
+
+---
 
 ## PR History
 
-### PRs 1–11 (initial build, pre current session)
-- Project init, gstack setup, documentation suite (PRODUCT, DESIGN, ARCHITECTURE, SCHEMA, AGENTS, API, ROADMAP, SECURITY, CONTRIBUTING)
-- Supabase migrations 001–004 (schema, RLS, seed, auth trigger)
-- Next.js scaffold: tsconfig, next.config.ts, Supabase clients, Robinhood adapter
-- API routes: assets, prices, theses, agents
-- Auth: email/password, SIWE wallet sign-in, user sync trigger
-- Core layout + navigation (desktop sidebar + mobile top/drawer/bottom)
-- All 5 main pages: Explore, Markets, Agents, Developers, Asset page (/market/[symbol])
-- Post Composer modal (CMD+N), Search palette (CMD+K)
-- Developer portal (/developers), Dashboard (/dashboard)
-- Human profile (/u/[username]), Agent profile (/agents/[id])
+| PR | Title | Status |
+|---|---|---|
+| #1–11 | Initial build: scaffold, auth, all 5 pages, migrations 001–004, nav, composer, search palette, profiles | Merged |
+| #12 | Unknown details | Merged |
+| #13 | Fix build failures: siwe as serverExternalPackages, @stripe/stripe-js peer dep | Merged |
+| #14 | Markets page + asset universe growth | Merged |
+| #15 | Per-symbol Supabase price fallback, Promise.allSettled in sync | Merged |
+| #16 | Market Pulse via Grok + X: `/api/v1/pulse/[symbol]`, market_pulse table | Merged |
+| #17 | Explore rebuild: Moving Now, Market Pulse Discovery, real bookmarks, data envelope fix | Merged |
+| #18 | Fix live prices: remove `ROBINHOOD_API_BASE_URL` env var gate | Merged |
+| #19 | Fix Robinhood adapter: parse `assets[]`/`quotes[]` format, calculate midpoint price | Merged |
+| #20 | Fix product issues: theses 500 error, explore batch prices, market events cold-start content | Merged |
+| #21 | Fix PostComposer (Publish button wired), profile page live data, theses API body optional | Merged |
+| #22 | E2E product flows: Privy→Supabase AuthSessionBridge, session bridge API route | Merged |
+| #23 | Bankr execution architecture: Buy flow, execution intents, provider capability model | Merged |
+| #24 | Twitter PFP sync on login (`/api/v1/me/sync`, SyncOnLogin hook) | Merged |
 
-### PR #12 (details unknown — before current session notes)
-
-### PR #13 — Fix build failures (merged)
-- `siwe` marked as serverExternalPackages so Next.js doesn't bundle ethers
-- Added `@stripe/stripe-js` peer dep (required by Privy FiatOnramp)
-- Site was not deploying before this
-
-### PR #14 — Markets page + asset universe growth (merged)
-- /markets now fetches all assets from /api/v1/assets (removed 10-symbol hardcode)
-- Sync route calls fetchAssets() from Robinhood and upserts full stock universe on every cron
-- Assets API cap: 100→500; batch price cap: 50→500
-
-### PR #15 — Per-symbol Supabase price fallback (merged)
-- /api/v1/prices/batch supplements each failed Robinhood symbol from Supabase
-- Sync switches Promise.all → Promise.allSettled (one bad symbol no longer kills whole cron)
-- Markets page seeds price map from assets+joined prices before batch fetch
-
-### PR #16 — Market Pulse via Grok + X (merged)
-- GET /api/v1/pulse/[symbol]: 3-min cache, stale-while-revalidate via after()
-- Calls Grok API (grok-3 + web_search) for real-time X/Twitter sentiment per ticker
-- market_pulse Supabase table + RLS (anon SELECT) + 20-ticker whitelist seeded at epoch
-- AssetView.tsx right sidebar: sentiment badge, summary, themes, up to 3 X posts
-- vercel.json → {} (removed Vercel cron; cron-job.org is sole scheduler)
-- **Migration needed**: supabase/migrations/20260821_market_pulse.sql (user confirmed run)
-
-### PR #17 — Explore rebuild + sync health (OPEN — not merged)
-- Explore page: Moving Now strip (real movers), Market Pulse Discovery section, Discussions rename, real bookmarks watchlist, fixed data envelope unwrapping bugs
-- GET /api/v1/pulse (list endpoint for explore)
-- GET /api/v1/bookmarks?target_type=asset (list mode for watchlist)
-- POST /api/v1/sync: instrumented with sync_runs health tracking
-- **Migration needed**: supabase/migrations/20260821_sync_runs.sql (NOT yet run by user)
+---
 
 ## Current Build Status
-- [x] Project initialized, full docs, migrations, scaffold, auth, nav
-- [x] All 5 main pages: Explore, Markets, Agents, Developers, Asset page
-- [x] Post Composer, Search palette, profiles
-- [x] Live price pipeline: Robinhood → Supabase fallback (PR #14, #15)
-- [x] Market Pulse sidebar card on asset pages (PR #16)
-- [x] market_pulse migration run in Supabase
-- [x] XAI_API_KEY set in Vercel
-- [x] cron-job.org handling sync (not Vercel cron)
-- [ ] PR #17 needs merge (explore rebuild)
-- [ ] sync_runs migration needs to be run
-- [ ] Events layer (earnings/filings) — Phase 1 priority
-- [ ] Asset page: events feed + discussion count
-- [ ] Markets page: Sectors strip, Most Discussed, /markets/stocks screener
-- [ ] Discussion thread (threaded comments, voting)
-- [ ] MCP implementation
 
-## What's Been Built
-- CLAUDE.md + NOTES.md
-- gstack installed + better-ui + frontend-ui-engineering skills
-- Full documentation suite (9 MD files)
-- Supabase migrations 001–004 + market_pulse migration
-- Next.js backend: Supabase clients, Robinhood adapter, API routes, auth
-- All 5 main pages: Explore, Markets, Agents, Developers, Asset page
-- Post Composer, Command Palette, App Nav (mobile-responsive)
-- Human + Agent profile pages, Developer Dashboard
+- [x] All pages render and return HTTP 200
+- [x] Live Robinhood prices working (batch endpoint, no env var gate)
+- [x] Supabase price fallback with `change_24h` enrichment
+- [x] Privy auth + AuthSessionBridge (Privy → Supabase session)
+- [x] Twitter PFP + username synced on login
+- [x] PostComposer wired to `/api/v1/theses` POST
+- [x] Profile pages fetch live data from `/api/v1/users/[username]`
+- [x] Market Pulse (Grok) on asset pages
+- [x] Bankr Buy flow (NVDA/AAPL/TSLA, external handoff only)
+- [x] Execution intents stored in Supabase
+- [x] cron-job.org handling 15-min sync
+- [ ] `change_24h` still null until cron has run 24h of snapshots
+- [ ] Market Pulse hidden on explore until Grok has refreshed at least one asset page
+- [ ] MCP implementation — not started
+- [ ] Threaded comments + voting UI — incomplete
+- [ ] Agent creation flow — incomplete
+- [ ] Events layer (earnings/filings auto-anchors) — Phase 1 remaining
 
-## Open Questions / Known Issues
-- Live site (roobird.vercel.app) user reports UI unchanged since PR #11 — most likely because Explore page rewrite is in PR #17 (not merged) and PRs #13–#16 were backend/data changes not visible on homepage or explore
-- ROBINHOOD_API_BASE_URL must be set in Vercel env — without it sync skips and prices never update
-- CRON_SECRET/SYNC_SECRET must match what cron-job.org sends
+## Known Issues / Remaining Bugs
 
-## Key Design Decisions
-- Light interface, white/warm-white background, near-black typography
-- Green/red reserved for market direction only
-- Restrained accent color (not Web3/DeFi aesthetic)
-- Dense but breathable — editorial/financial feel
-- Agents have AGENT badge, humans have HUMAN badge
-- No neon, no robot emojis for agents — treat as legitimate participants
-- 240px left nav, 680-800px main, 280-340px right sidebar
-- No purple/indigo, no gradients, no AI aesthetic
-- Icon stroke: 1.5px beside regular text, 2px beside semibold
-- scale(0.96) on button press, not 0.95
+- **change_24h null**: Moving Now strip requires two price snapshots 24h apart. Will self-heal once cron has run for a day.
+- **Market Pulse cold start**: `market_pulse` rows seeded at epoch — discovery section hidden until a user visits an asset page (triggers Grok background refresh).
+- **sync_runs migration**: Confirm `20260821_sync_runs.sql` has been run in Supabase SQL Editor.
+- **Explore feed empty**: `theses` table may only have seed data until real posts exist.
+- **Agent directory empty**: No real agent profiles yet.
 
 ## V1 Success Criteria
-Human: watch NVDA → read intelligence → vote on posts → publish thesis → comment → discover execution
-Agent: authenticate → search → get market context → publish thesis → reply in thread
-Developer: register → create agent → get credentials → connect MCP/API → read → write
-
-## Out of Scope for V1
-No trading engine, DEX, liquidity pools, autonomous Roobird agent, copy trading,
-portfolio management, reputation scoring, karma, tokens, prediction markets, monetization,
-moderators per stock, Portfolio/Orders/Trade/Positions/P&L in nav.

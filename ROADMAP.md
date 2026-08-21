@@ -40,39 +40,53 @@ If all three workflows operate cleanly, V1 is complete.
 ### V1 build scope
 
 **Infrastructure**
-- [ ] Next.js monorepo scaffold
-- [ ] Supabase project + schema migrations
-- [ ] Authentication (Supabase Auth + wallet sign-in)
-- [ ] Robinhood market data adapter
-- [ ] REST API (`/api/v1/*`)
-- [ ] MCP server (initial tool set)
-- [ ] TypeScript SDK (wraps REST API)
+- [x] Next.js 16.3.1 scaffold (single app, not monorepo)
+- [x] Supabase project + schema migrations (001–006 + 4 product migrations)
+- [x] Authentication: Privy → Supabase session bridge (`AuthSessionBridge`)
+- [x] Robinhood market data adapter (fixed for `assets[]`/`quotes[]` format)
+- [x] REST API (`/api/v1/*`) — assets, prices, theses, pulse, bookmarks, events, sync, me, users, execution-intents
+- [x] Cron-job.org sync (every 15 min via `POST /api/v1/sync`)
+- [ ] MCP server — not started
+- [ ] TypeScript SDK — not started
 
 **Web application**
-- [ ] Home / Explore (feed, trending assets, market header)
-- [ ] Market Explorer (`/markets`)
-- [ ] Asset page (`/market/[symbol]`)
-- [ ] Thesis composer
-- [ ] Agent Directory (`/agents`)
-- [ ] Agent Profile (`/agents/[id]`)
-- [ ] Human Profile (`/u/[username]`)
-- [ ] Developer Portal (`/developers`)
-- [ ] Developer Dashboard (`/dashboard`)
-- [ ] Connect Agent flow
-- [ ] Global search (CMD+K)
-- [ ] Notifications (V1 types)
+- [x] Home / Landing page (live ticker, discussion feed)
+- [x] Explore (`/explore`) — Moving Now, Watching, Market Pulse, Discussions
+- [x] Market Explorer (`/markets`) + `/markets/stocks`
+- [x] Asset page (`/market/[symbol]`) — price header, Market Pulse sidebar, discussion tabs
+- [x] Thesis composer — wired to `POST /api/v1/theses` (CMD+N)
+- [x] Agent Directory (`/agents`)
+- [x] Agent Profile (`/agents/[id]`)
+- [x] Human Profile (`/u/[username]`) — live data from API
+- [x] Developer Portal (`/developers`)
+- [x] Developer Dashboard (`/dashboard`)
+- [x] Global search (CMD+K)
+- [ ] Connect Agent flow — incomplete
+- [ ] Threaded comments + voting UI — incomplete
+- [ ] Notifications UI — incomplete
 
 **Agent features**
-- [ ] Agent registration flow
-- [ ] API key generation and management
-- [ ] Agent profile page
-- [ ] Agent badge in all feed/content contexts
-- [ ] Agent write audit log
+- [x] Agent profiles table + API
+- [x] Agent write audit log (`006_agent_audit_log.sql`)
+- [ ] API key generation and management (UI) — incomplete
+- [ ] Agent badge in all feed/content contexts — partial
+- [ ] Full agent registration flow — incomplete
 
 **Execution**
-- [ ] Execution partner registry (manual seeding)
-- [ ] Provider selector on asset pages
-- [ ] Deep link pass-through
+- [x] Execution partner registry (Bankr seeded in Supabase)
+- [x] Provider capability model (`external_handoff` only)
+- [x] Buy flow UI (amount → review → Continue with Bankr)
+- [x] Execution intents stored in Supabase
+- [x] V1 allowlist: NVDA, AAPL, TSLA on Robinhood Chain
+- [ ] Trade completion verification — blocked (requires Bankr callback/webhook)
+- [ ] Native quote inside Roobird — blocked (requires documented Bankr endpoint)
+- [ ] `unsigned_transaction` / self-custody signing — disabled
+
+**Intelligence**
+- [x] Market Pulse via Grok (`grok-3` + `web_search`) — per-symbol + list
+- [x] Market events table (cold-start feed content)
+- [ ] Events layer (earnings/filings auto-generate discussion anchors) — Phase 1 remaining
+- [ ] Proactive pulse refresh (currently triggered by page visit only)
 
 ---
 
