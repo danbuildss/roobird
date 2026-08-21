@@ -20,6 +20,16 @@ export function RoobirdPrivyProvider({ children }: { children: React.ReactNode }
           solana: { createOnLogin: 'off' },
         },
       }}
+      onSuccess={(user) => {
+        const avatar_url = user.twitter?.profilePictureUrl
+        const username = user.twitter?.username
+        if (!avatar_url && !username) return
+        fetch('/api/v1/me/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ avatar_url, username }),
+        }).catch(() => {})
+      }}
     >
       {children}
     </PrivyProvider>
