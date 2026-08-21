@@ -1,6 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { ok, Errors } from '@/lib/api/response'
-import { fetchPrices } from '@/lib/adapters/robinhood/client'
+import { fetchAssets, fetchPrice } from '@/lib/adapters/robinhood/client'
 
 // POST /api/v1/sync — called by cron-job.org every 15 min
 // Bearer token must match CRON_SECRET or SYNC_SECRET env var
@@ -48,6 +48,24 @@ export async function POST(request: Request) {
     } catch { /* non-fatal */ }
   }
 
+  // Upsert full asset list from Robinhood so the DB grows beyond seeded rows
+  let robinhoodAssets: Awaited<ReturnType<typeof fetchAssets>> = []
+  try {
+    robinhoodAssets = await fetchAssets()
+    if (robinhoodAssets.length > 0) {
+      const assetUpsertRows = robinhoodAssets.map(a => ({
+        symbol: a.symbol,
+        name: a.name,
+        contract_address: a.contractAddress,
+        logo_url: a.logoUrl,
+        is_active: a.status === 'active',
+      }))
+      await supabase.from('assets').upsert(assetUpsertRows, { onConflict: 'symbol', ignoreDuplicates: false })
+    }
+  } catch {
+    // Non-fatal: fall back to existing DB assets
+  }
+
   const { data: assetRows, error: assetErr } = await supabase
     .from('assets')
     .select('id, symbol')
@@ -62,43 +80,46 @@ export async function POST(request: Request) {
   const symbolToId = Object.fromEntries(assetRows.map(a => [a.symbol, a.id]))
   const attempted = symbols.length
 
-  try {
-    const prices = await fetchPrices(symbols)
-    const rows = prices
-      .filter(p => symbolToId[p.symbol])
-      .map(p => ({
-        asset_id: symbolToId[p.symbol],
-        price: p.price,
-        bid: p.bid,
-        ask: p.ask,
-        is_halted: p.isHalted,
-      }))
+  // Use allSettled so one bad symbol doesn't kill the whole sync
+  const results = await Promise.allSettled(symbols.map(sym => fetchPrice(sym)))
+  const rows: { asset_id: string; price: number; bid: number; ask: number; is_halted: boolean }[] = []
 
-    let inserted = 0
-    let failed = 0
-    if (rows.length) {
-      const { error } = await supabase.from('prices').insert(rows)
-      if (error) { failed = rows.length }
-      else { inserted = rows.length }
+  let fetched = 0
+  let failed = 0
+
+  for (let i = 0; i < symbols.length; i++) {
+    const result = results[i]
+    const sym = symbols[i]
+    if (result.status === 'fulfilled') {
+      const p = result.value
+      if (symbolToId[sym]) {
+        rows.push({
+          asset_id: symbolToId[sym],
+          price: p.price,
+          bid: p.bid,
+          ask: p.ask,
+          is_halted: p.isHalted,
+        })
+      }
+    } else {
+      failed++
     }
-
-    await finishRun(failed > 0 && inserted === 0 ? 'failed' : 'completed', {
-      assets_attempted: attempted,
-      assets_updated: inserted,
-      prices_inserted: inserted,
-      failure_count: failed,
-    })
-
-    return ok({ synced: inserted, failed, symbols })
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Robinhood API unavailable'
-    await finishRun('failed', {
-      assets_attempted: attempted,
-      failure_count: attempted,
-      error_summary: msg,
-    })
-    return ok({ synced: 0, failed: attempted, reason: msg })
   }
+
+  if (rows.length) {
+    const { error } = await supabase.from('prices').insert(rows)
+    if (error) { failed += rows.length }
+    else { fetched = rows.length }
+  }
+
+  await finishRun(fetched === 0 && failed > 0 ? 'failed' : 'completed', {
+    assets_attempted: attempted,
+    assets_updated: fetched,
+    prices_inserted: fetched,
+    failure_count: failed,
+  })
+
+  return ok({ synced: fetched, failed, upserted_assets: robinhoodAssets.length, symbols })
 }
 
 // GET /api/v1/sync — cron-job.org can call GET; delegate to POST logic

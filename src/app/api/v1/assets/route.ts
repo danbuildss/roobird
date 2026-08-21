@@ -4,7 +4,7 @@ import { ok, Errors } from '@/lib/api/response'
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const type = searchParams.get('type')
-  const limit = Math.min(parseInt(searchParams.get('limit') ?? '50'), 100)
+  const limit = Math.min(parseInt(searchParams.get('limit') ?? '50'), 500)
   const cursor = searchParams.get('cursor')
 
   const supabase = await createClient()
@@ -18,6 +18,8 @@ export async function GET(request: Request) {
     `)
     .eq('is_active', true)
     .order('symbol')
+    .order('recorded_at', { ascending: false, referencedTable: 'prices' })
+    .limit(1, { referencedTable: 'prices' })
     .limit(limit)
 
   if (type) query = query.eq('asset_type', type)
