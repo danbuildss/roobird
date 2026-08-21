@@ -1,4 +1,4 @@
-import { AssetView } from '@/components/asset/AssetView'
+import { AssetExecutionShell } from '@/components/execution/AssetExecutionShell'
 
 export default async function AssetPage({
   params,
@@ -6,5 +6,5 @@ export default async function AssetPage({
   params: Promise<{ symbol: string }>
 }) {
   const { symbol } = await params
-  return <AssetView symbol={symbol.toUpperCase()} />
+  return <AssetExecutionShell symbol={symbol.toUpperCase()} />
 }
