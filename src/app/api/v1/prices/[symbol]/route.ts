@@ -1,18 +1,70 @@
-import { fetchPrice } from '@/lib/adapters/robinhood/client'
+import { createClient } from '@/lib/supabase/server'
 import { ok, Errors } from '@/lib/api/response'
+import { fetchPrice } from '@/lib/adapters/robinhood/client'
 
-export const revalidate = 15 // 15-second cache matching Robinhood's own cache
+export const revalidate = 15
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ symbol: string }> },
 ) {
   const { symbol } = await params
+  const upper = symbol.toUpperCase()
 
-  try {
-    const price = await fetchPrice(symbol.toUpperCase())
-    return ok(price)
-  } catch {
-    return Errors.notFound(`Price not found for ${symbol}`)
+  // Try live Robinhood API first when configured — gives sub-15-min freshness
+  if (process.env.ROBINHOOD_API_BASE_URL) {
+    try {
+      const live = await fetchPrice(upper)
+      return ok({
+        symbol: live.symbol,
+        price: live.price,
+        bid: live.bid,
+        ask: live.ask,
+        change_24h: null,   // not available from Robinhood price endpoint
+        volume: live.volume,
+        market_cap: null,
+        isHalted: live.isHalted,
+        updatedAt: live.updatedAt,
+      })
+    } catch {
+      // fall through to Supabase
+    }
   }
+
+  // Supabase fallback — seeded or last cron snapshot
+  const supabase = await createClient()
+
+  const { data: asset } = await supabase
+    .from('assets')
+    .select(`
+      id, symbol,
+      prices ( price, bid, ask, change_24h, volume_24h, market_cap, is_halted, recorded_at )
+    `)
+    .eq('symbol', upper)
+    .eq('is_active', true)
+    .order('recorded_at', { ascending: false, referencedTable: 'prices' })
+    .limit(1, { referencedTable: 'prices' })
+    .single()
+
+  if (!asset) return Errors.notFound(`Asset ${symbol} not found`)
+
+  const p = (asset.prices as Array<{
+    price: number; bid: number | null; ask: number | null
+    change_24h: number | null; volume_24h: number | null
+    market_cap: number | null; is_halted: boolean; recorded_at: string
+  }>)?.[0]
+
+  if (!p) return Errors.notFound(`No price data for ${symbol}`)
+
+  return ok({
+    symbol: (asset as { symbol: string }).symbol,
+    price: Number(p.price),
+    bid: p.bid != null ? Number(p.bid) : null,
+    ask: p.ask != null ? Number(p.ask) : null,
+    change_24h: p.change_24h != null ? Number(p.change_24h) : null,
+    volume: p.volume_24h != null ? Number(p.volume_24h) : null,
+    market_cap: p.market_cap != null ? Number(p.market_cap) : null,
+    isHalted: p.is_halted,
+    updatedAt: p.recorded_at,
+  })
 }

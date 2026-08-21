@@ -73,7 +73,7 @@ export default function MarketsPage() {
     Promise.all(
       TRACKED_SYMBOLS.map(sym =>
         fetch(`/api/v1/prices/${sym}`)
-          .then(r => r.ok ? r.json() : null)
+          .then(async r => { if (!r.ok) return null; const j = await r.json(); return j.data ?? null })
           .catch(() => null)
       )
     ).then(results => {
@@ -84,7 +84,7 @@ export default function MarketsPage() {
           const changeVal = data.change_24h ?? 0
           loaded.push({
             symbol: sym,
-            name: sym, // name will match symbol; could enrich from assets table
+            name: sym,
             price: Number(data.price).toFixed(2),
             change: `${changeVal >= 0 ? '+' : ''}${Number(changeVal).toFixed(2)}%`,
             up: changeVal >= 0,
@@ -92,7 +92,6 @@ export default function MarketsPage() {
         }
       })
 
-      // If API unavailable (no Supabase configured), show empty rather than crash
       setAssets(loaded)
       setLoading(false)
     })
@@ -183,7 +182,7 @@ export default function MarketsPage() {
           </div>
         ) : trending.length === 0 ? (
           <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
-            No assets available yet — add assets via the Robinhood adapter sync.
+            Market data temporarily unavailable. Please try again shortly.
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
