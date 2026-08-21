@@ -1,11 +1,14 @@
 'use client'
 
 import { PrivyProvider } from '@privy-io/react-auth'
+import { AuthSessionBridge } from '@/components/providers/AuthSessionBridge'
 
 export function RoobirdPrivyProvider({ children }: { children: React.ReactNode }) {
+  const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? 'cmt1l660402040chzny0abq42'
+
   return (
     <PrivyProvider
-      appId="cmt1l660402040chzny0abq42"
+      appId={appId}
       config={{
         loginMethods: ['email', 'twitter', 'wallet'],
         appearance: {
@@ -21,6 +24,7 @@ export function RoobirdPrivyProvider({ children }: { children: React.ReactNode }
         },
       }}
     >
+      <AuthSessionBridge />
       {children}
     </PrivyProvider>
   )
