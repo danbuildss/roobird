@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import {
   ArrowUpRight,
@@ -215,6 +215,45 @@ export default function ExplorePage() {
   const [liveAgents, setLiveAgents]       = useState<LiveAgent[]>([])
   const [feed, setFeed]                   = useState<FeedPost[]>([])
   const [feedLoading, setFeedLoading]     = useState(true)
+  const [addMarketOpen, setAddMarketOpen] = useState(false)
+  const [addingSymbol, setAddingSymbol]   = useState<string | null>(null)
+  const addMarketRef = useRef<HTMLDivElement>(null)
+
+  // Close add-market popover on outside click
+  useEffect(() => {
+    if (!addMarketOpen) return
+    const handler = (e: MouseEvent) => {
+      if (addMarketRef.current && !addMarketRef.current.contains(e.target as Node)) {
+        setAddMarketOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [addMarketOpen])
+
+  const addMarket = useCallback(async (sym: string) => {
+    if (addingSymbol) return
+    setAddingSymbol(sym)
+    try {
+      const assetRes = await fetch(`/api/v1/assets/${sym}`)
+      const assetJson = await assetRes.json()
+      const asset_id = assetJson.data?.id
+      if (!asset_id) return
+      const res = await fetch('/api/v1/bookmarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_type: 'asset', target_id: asset_id }),
+      })
+      if (res.ok) {
+        setWatchedSymbols(prev => prev.includes(sym) ? prev : [...prev, sym])
+        setAddMarketOpen(false)
+      }
+    } catch {
+      // silently ignore
+    } finally {
+      setAddingSymbol(null)
+    }
+  }, [addingSymbol])
 
   // Fetch prices for all PULSE_SYMBOLS in parallel
   useEffect(() => {
@@ -422,16 +461,55 @@ export default function ExplorePage() {
               <p style={{ fontSize:11, fontWeight:600, color:'var(--text-3)', letterSpacing:'0.06em', textTransform:'uppercase' }}>
                 Watching
               </p>
-              <Link href="/markets" style={{
-                fontSize:11, color:'var(--text-3)', textDecoration:'none',
-                display:'inline-flex', alignItems:'center', gap:4,
-              }}
-                onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-2)')}
-                onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-3)')}
-              >
-                <Plus size={11} strokeWidth={2} />
-                Add markets
-              </Link>
+              <div ref={addMarketRef} style={{ position:'relative' }}>
+                <button
+                  onClick={() => setAddMarketOpen(o => !o)}
+                  style={{
+                    background:'none', border:'none', cursor:'pointer', padding:0,
+                    fontSize:11, color:'var(--text-3)',
+                    display:'inline-flex', alignItems:'center', gap:4,
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-2)')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-3)')}
+                >
+                  <Plus size={11} strokeWidth={2} />
+                  Add markets
+                </button>
+                {addMarketOpen && (() => {
+                  const available = PULSE_SYMBOLS.filter(s => !watchedSymbols.includes(s))
+                  return (
+                    <div style={{
+                      position:'absolute', right:0, top:'calc(100% + 6px)', zIndex:100,
+                      background:'var(--surface)', border:'1px solid var(--border)',
+                      borderRadius:10, boxShadow:'0 4px 16px rgba(0,0,0,0.12)',
+                      minWidth:160, padding:'6px 0', overflow:'hidden',
+                    }}>
+                      {available.length === 0 ? (
+                        <p style={{ fontSize:12, color:'var(--text-3)', padding:'8px 14px' }}>
+                          All markets added
+                        </p>
+                      ) : available.map(sym => (
+                        <button
+                          key={sym}
+                          disabled={addingSymbol === sym}
+                          onClick={() => addMarket(sym)}
+                          style={{
+                            width:'100%', background:'none', border:'none', cursor:'pointer',
+                            padding:'7px 14px', fontSize:13, fontWeight:600,
+                            color:'var(--text-1)', textAlign:'left',
+                            opacity: addingSymbol === sym ? 0.5 : 1,
+                            transition:'background 100ms',
+                          }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-raised)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                        >
+                          {addingSymbol === sym ? '…' : sym}
+                        </button>
+                      ))}
+                    </div>
+                  )
+                })()}
+              </div>
             </div>
             <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:14 }}>
               {pricesLoading ? (

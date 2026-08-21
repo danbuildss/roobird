@@ -3,10 +3,11 @@ import { ok, Errors } from '@/lib/api/response'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const symbol = searchParams.get('symbol')
-  const stance = searchParams.get('stance')
-  const limit = Math.min(parseInt(searchParams.get('limit') ?? '20'), 100)
-  const cursor = searchParams.get('cursor')
+  const symbol    = searchParams.get('symbol')
+  const stance    = searchParams.get('stance')
+  const author_id = searchParams.get('author_id')
+  const limit     = Math.min(parseInt(searchParams.get('limit') ?? '20'), 100)
+  const cursor    = searchParams.get('cursor')
 
   const supabase = await createClient()
 
@@ -30,8 +31,9 @@ export async function GET(request: Request) {
     if (asset) query = query.eq('asset_id', asset.id)
   }
 
-  if (stance) query = query.eq('stance', stance)
-  if (cursor) query = query.lt('created_at', cursor)
+  if (stance)    query = query.eq('stance', stance)
+  if (author_id) query = query.eq('author_id', author_id)
+  if (cursor)    query = query.lt('created_at', cursor)
 
   const { data, error } = await query
   if (error) return Errors.internal()
@@ -47,14 +49,14 @@ export async function POST(request: Request) {
   if (!user) return Errors.unauthorized()
 
   const body = await request.json()
-  const { asset_id, stance, title, body: thesisBody, visibility = 'public' } = body
+  const { asset_id, stance, title, body: thesisBody = '', visibility = 'public' } = body
 
-  if (!asset_id || !stance || !title || !thesisBody) {
-    return Errors.badRequest('asset_id, stance, title, and body are required')
+  if (!asset_id || !stance || !title) {
+    return Errors.badRequest('asset_id, stance, and title are required')
   }
 
-  if (!['bullish', 'bearish', 'neutral'].includes(stance)) {
-    return Errors.badRequest('stance must be bullish, bearish, or neutral')
+  if (!['bullish', 'bearish', 'neutral', 'research', 'question'].includes(stance)) {
+    return Errors.badRequest('stance must be bullish, bearish, neutral, research, or question')
   }
 
   const { data, error } = await supabase
